@@ -1,0 +1,5 @@
+module astcenc {
+    header "../astcenc.h"
+
+    export *
+}
