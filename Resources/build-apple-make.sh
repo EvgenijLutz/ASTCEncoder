@@ -27,11 +27,10 @@ ft_developer="/Applications/Xcode.app/Contents/Developer"
 # Output library name. Determined by the build system. Try to change the name if possible in the future
 libname=astcenc
 # Your signing identity to sign the xcframework. Execute "security find-identity -v -p codesigning" and select one from the list
-identity=YOUR_SIGNING_IDENTITY
+identity=B42A10624E8E06BC95CD03069100C6E67121D61B
 
 # Android NDK path
-ndk_path="PATH_TO_YOUR_ANDROID_NDK"
-#ndk_path="/Users/evgenij/Library/Android/sdk/ndk/29.0.13846066"
+ndk_path="/Users/evgenij/Library/Android/sdk/ndk/29.0.13846066"
 
 
 # Console output formatting

@@ -99,6 +99,8 @@ public extension ASTCRawImage {
                 throw LibASTCError.other("No data provider :(")
             }
             
+            //guard let colorSpace = CGColorSpace(name: CGColorSpace.extendedDisplayP3) else {
+            //guard let colorSpace = CGColorSpace(name: CGColorSpace.displayP3) else {
             guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
                 throw LibASTCError.other("No color space :(")
             }

@@ -170,9 +170,10 @@ ASTCRawImage* __nullable ASTCRawImage::create(char* __nonnull data, long width, 
     else {
         memset(dataCopy, 255, imageDataSize);
         auto pixelSize = numComponents * componentSize;
+        auto targetPixelSize = 4 * componentSize;
         for (auto j = 0; j < height; j++) {
             for (auto i = 0; i < width; i++) {
-                memcpy(dataCopy + (i * 4 + j * width * 4),
+                memcpy(dataCopy + (i * targetPixelSize + j * width * targetPixelSize),
                        data + (i * pixelSize + 0 + j * width * pixelSize),
                        pixelSize);
             }
@@ -199,7 +200,7 @@ ASTCImage* __nullable ASTCRawImage::compress(long blockWidth, long blockHeight, 
                                       static_cast<unsigned int>(blockHeight),
                                       static_cast<unsigned int>(blockDepth),
                                       quality,
-                                      ASTCENC_FLG_USE_DECODE_UNORM8,
+                                      0/*ASTCENC_FLG_USE_DECODE_UNORM8*/,
                                       &config);
     if (result != astcenc_error::ASTCENC_SUCCESS) {
         error.setErrorMessage("Could not initialise config");
@@ -370,7 +371,7 @@ ASTCRawImage* __nullable ASTCImage::decompress(ASTCErrorInfo& error, void* __nul
                                       static_cast<unsigned int>(_blockHeight),
                                       static_cast<unsigned int>(_blockDepth),
                                       ASTCENC_PRE_MEDIUM, // ASTCENC_PRE_EXHAUSTIVE,
-                                      ASTCENC_FLG_USE_DECODE_UNORM8 | ASTCENC_FLG_DECOMPRESS_ONLY,
+                                      /*ASTCENC_FLG_USE_DECODE_UNORM8 |*/ ASTCENC_FLG_DECOMPRESS_ONLY,
                                       &config);
     if (result != astcenc_error::ASTCENC_SUCCESS) {
         error.setErrorMessage("Could not initialise config");

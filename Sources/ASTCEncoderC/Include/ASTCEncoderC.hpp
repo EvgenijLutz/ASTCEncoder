@@ -137,6 +137,8 @@ public:
     /// Expected values are `1` (8 bit), `2` (16 bit) and `4` (32 bit).
     long getComponentSize() SWIFT_COMPUTED_PROPERTY { return _componentSize; }
     
+    //long getComponentSize() SWIFT_COMPUTED_PROPERTY { return _componentSize; }
+    
     const char* __nonnull getData() SWIFT_RETURNS_INDEPENDENT_VALUE SWIFT_COMPUTED_PROPERTY { return _data; }
 }
 SWIFT_SHARED_REFERENCE(ASTCImageRetain, ASTCImageRelease)
