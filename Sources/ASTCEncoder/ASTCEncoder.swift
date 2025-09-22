@@ -2,7 +2,7 @@
 // https://docs.swift.org/swift-book
 
 import Foundation
-import ASTCEncoderC
+@_exported import ASTCEncoderC
 
 #if canImport(CoreGraphics)
 import CoreGraphics
@@ -26,6 +26,29 @@ public extension ASTCErrorInfo {
 }
 
 
+extension ASTCBlockSize: @retroactive Equatable {
+}
+
+extension ASTCBlockSize: @retroactive Hashable {
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(width)
+        hasher.combine(height)
+        hasher.combine(depth)
+    }
+}
+
+
+public typealias ASTCCompressionQuality = Float
+public extension ASTCCompressionQuality {
+    static let fastest: ASTCCompressionQuality = 0
+    static let fast: ASTCCompressionQuality = 10
+    static let medium: ASTCCompressionQuality = 60
+    static let thorough: ASTCCompressionQuality = 98
+    static let veryThorough: ASTCCompressionQuality = 99
+    static let exhaustive: ASTCCompressionQuality = 100
+}
+
+
 public extension ASTCRawImage {
     static func create(data: UnsafeMutablePointer<CChar>, width: Int, height: Int, numComponents: Int, componentSize: Int, linear: Bool, hdr: Bool) throws(LibASTCError) -> ASTCRawImage {
         var error = ASTCErrorInfo()
@@ -43,7 +66,7 @@ public extension ASTCRawImage {
     }
     
     
-    func compress(blockWidth: Int, blockHeight: Int, quality: Float, _ progressCallback: @Sendable (_ progress: Float) -> Void = { _ in }) throws -> ASTCImage {
+    func compress(blockSize: ASTCBlockSize, quality: ASTCCompressionQuality, _ progressCallback: @Sendable (_ progress: Float) -> Void = { _ in }) throws -> ASTCImage {
         return try withoutActuallyEscaping(progressCallback) { escapingClosure in
             struct CallbackContext: Sendable {
                 var progressCallback: @Sendable (Float) -> Void
@@ -52,8 +75,7 @@ public extension ASTCRawImage {
             
             return try withUnsafeMutablePointer(to: &callbackContext) { pointer in
                 var error = ASTCErrorInfo()
-                let image = __compressUnsafe(blockWidth: blockWidth,
-                                             blockHeight: blockHeight,
+                let image = __compressUnsafe(blockSize: blockSize,
                                              quality: quality,
                                              error: &error,
                                              userInfo: pointer) { userInfo, progress in
@@ -71,6 +93,17 @@ public extension ASTCRawImage {
                 return image
             }
         }
+    }
+    
+    
+    func withData(_ action: (_ data: borrowing Data) throws -> Void) rethrows {
+        let contents = _data
+        let data = Data(bytesNoCopy: contents, count: contentsSize, deallocator: .none)
+        try action(data)
+    }
+    
+    var data: Data {
+        Data(bytes: _data, count: contentsSize)
     }
 }
 
@@ -94,8 +127,7 @@ public extension ASTCImage {
 public extension ASTCRawImage {
     var cgImage: CGImage  {
         get throws {
-            let contents = Data(bytes: data, count: dataSize)
-            guard let dataProvider = CGDataProvider(data: contents as CFData) else {
+            guard let dataProvider = CGDataProvider(data: data as CFData) else {
                 throw LibASTCError.other("No data provider :(")
             }
             

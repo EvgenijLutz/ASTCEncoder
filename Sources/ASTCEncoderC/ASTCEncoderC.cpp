@@ -98,6 +98,40 @@ void ASTCErrorInfo::setErrorMessage(const char* __nullable errorMessage) {
 }
 
 
+// MARK: - ASTCBlockSize
+
+const ASTCBlockSize ASTCBlockSize::_4x4 = ASTCBlockSize(4, 4, 1);
+const ASTCBlockSize ASTCBlockSize::_5x4 = ASTCBlockSize(5, 4, 1);
+const ASTCBlockSize ASTCBlockSize::_5x5 = ASTCBlockSize(5, 5, 1);
+const ASTCBlockSize ASTCBlockSize::_6x5 = ASTCBlockSize(6, 5, 1);
+const ASTCBlockSize ASTCBlockSize::_6x6 = ASTCBlockSize(6, 6, 1);
+const ASTCBlockSize ASTCBlockSize::_8x5 = ASTCBlockSize(8, 5, 1);
+const ASTCBlockSize ASTCBlockSize::_8x6 = ASTCBlockSize(8, 6, 1);
+const ASTCBlockSize ASTCBlockSize::_8x8 = ASTCBlockSize(8, 8, 1);
+const ASTCBlockSize ASTCBlockSize::_10x5 = ASTCBlockSize(10, 5, 1);
+const ASTCBlockSize ASTCBlockSize::_10x6 = ASTCBlockSize(10, 6, 1);
+const ASTCBlockSize ASTCBlockSize::_10x8 = ASTCBlockSize(10, 8, 1);
+const ASTCBlockSize ASTCBlockSize::_10x10 = ASTCBlockSize(10, 10, 1);
+const ASTCBlockSize ASTCBlockSize::_12x10 = ASTCBlockSize(12, 10, 1);
+const ASTCBlockSize ASTCBlockSize::_12x12 = ASTCBlockSize(12, 12, 1);
+
+const ASTCBlockSize ASTCBlockSize::_3x3x3 = ASTCBlockSize(3, 3, 3);
+const ASTCBlockSize ASTCBlockSize::_4x3x3 = ASTCBlockSize(4, 3, 3);
+const ASTCBlockSize ASTCBlockSize::_4x4x3 = ASTCBlockSize(4, 4, 3);
+const ASTCBlockSize ASTCBlockSize::_4x4x4 = ASTCBlockSize(4, 4, 4);
+const ASTCBlockSize ASTCBlockSize::_5x4x4 = ASTCBlockSize(5, 4, 4);
+const ASTCBlockSize ASTCBlockSize::_5x5x4 = ASTCBlockSize(5, 5, 4);
+const ASTCBlockSize ASTCBlockSize::_5x5x5 = ASTCBlockSize(5, 5, 5);
+const ASTCBlockSize ASTCBlockSize::_6x5x5 = ASTCBlockSize(6, 5, 5);
+const ASTCBlockSize ASTCBlockSize::_6x6x5 = ASTCBlockSize(6, 6, 5);
+const ASTCBlockSize ASTCBlockSize::_6x6x6 = ASTCBlockSize(6, 6, 6);
+
+
+bool ASTCBlockSize::operator == (const ASTCBlockSize& other) const {
+    return width == other.width && height == other.height && depth == other.depth;
+}
+
+
 // MARK: - ASTCRawImage
 
 ASTCRawImage::ASTCRawImage(char* __nonnull data, long width, long height, long originalNumComponents, long componentSize, bool linear, bool hdr):
@@ -188,12 +222,12 @@ ASTCRawImage* __nullable ASTCRawImage::create(char* __nonnull data, long width, 
 }
 
 
-ASTCImage* __nullable ASTCRawImage::compress(long blockWidth, long blockHeight, float quality, ASTCErrorInfo& error, void* __nullable userInfo, ASTCEncoderProgressCallback __nullable progressCallback) {
+ASTCImage* __nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float quality, ASTCErrorInfo& error, void* __nullable userInfo, ASTCEncoderProgressCallback __nullable progressCallback) {
     // Prepare ASTC encoder config
     astcenc_config config;
     auto profile = astcenc_profile::ASTCENC_PRF_LDR;
-    //auto blockWidth = 4;
-    //auto blockHeight = 4;
+    long blockWidth = blockSize.width;
+    long blockHeight = blockSize.height;
     long blockDepth = 1;
     auto result = astcenc_config_init(profile,
                                       static_cast<unsigned int>(blockWidth),

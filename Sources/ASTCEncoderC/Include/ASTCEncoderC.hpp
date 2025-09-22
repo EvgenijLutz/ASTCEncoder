@@ -22,6 +22,7 @@ class ASTCRawImage;
 class ASTCImage;
 
 
+/// Error description.
 struct ASTCErrorInfo final {
 private:
     char _errorMessage[ASTC_ENCODER_ERROR_SIZE];
@@ -40,6 +41,55 @@ public:
 };
 
 
+/// ASTC block dimensions.
+struct ASTCBlockSize {
+    long width;
+    long height;
+    long depth;
+    
+    
+    const static ASTCBlockSize _4x4;
+    const static ASTCBlockSize _5x4;
+    const static ASTCBlockSize _5x5;
+    const static ASTCBlockSize _6x5;
+    const static ASTCBlockSize _6x6;
+    const static ASTCBlockSize _8x5;
+    const static ASTCBlockSize _8x6;
+    const static ASTCBlockSize _8x8;
+    const static ASTCBlockSize _10x5;
+    const static ASTCBlockSize _10x6;
+    const static ASTCBlockSize _10x8;
+    const static ASTCBlockSize _10x10;
+    const static ASTCBlockSize _12x10;
+    const static ASTCBlockSize _12x12;
+    
+    const static ASTCBlockSize _3x3x3;
+    const static ASTCBlockSize _4x3x3;
+    const static ASTCBlockSize _4x4x3;
+    const static ASTCBlockSize _4x4x4;
+    const static ASTCBlockSize _5x4x4;
+    const static ASTCBlockSize _5x5x4;
+    const static ASTCBlockSize _5x5x5;
+    const static ASTCBlockSize _6x5x5;
+    const static ASTCBlockSize _6x6x5;
+    const static ASTCBlockSize _6x6x6;
+    
+    
+    ASTCBlockSize(long width, long height, long depth) {
+        this->width = width;
+        this->height = height;
+        this->depth = depth;
+    }
+    
+    bool operator == (const ASTCBlockSize& other) const;
+};
+
+
+/// ASTC encoder progress callback.
+///
+/// Specify a callback in the ``ASTCRawImage/compress`` method to track compression progress.
+///
+/// - Returns: `true` if encoder should stop encoding, otherwise `false`.
 typedef bool (* ASTCEncoderProgressCallback)(void* __nullable userInfo, float progress);
 
 
@@ -50,7 +100,7 @@ class ASTCRawImage {
 private:
     std::atomic<size_t> referenceCounter;
     
-    /*const*/ char* __nonnull _data;
+    char* __nonnull _data;
     const long _width;
     const long _height;
     const long _originalNumComponents;
@@ -69,26 +119,41 @@ private:
     ~ASTCRawImage();
     
 public:
-    // TODO: Mark as initializer after Swift 6.2 release
     static ASTCRawImage* __nullable create(char* __nonnull data, long width, long height, long numComponents, long componentSize, bool linear, bool hdr, ASTCErrorInfo& error) SWIFT_NAME(__createUnsafe(_:width:height:numComponents:componentSize:linear:hdr:error:)) SWIFT_RETURNS_RETAINED;
     
-    ASTCImage* __nullable compress(long blockWidth, long blockHeight, float quality, ASTCErrorInfo& error, void* __nullable userInfo, ASTCEncoderProgressCallback __nullable progressCallback) SWIFT_NAME(__compressUnsafe(blockWidth:blockHeight:quality:error:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
+    ASTCImage* __nullable compress(ASTCBlockSize blockDimensions, float quality, ASTCErrorInfo& error, void* __nullable userInfo, ASTCEncoderProgressCallback __nullable progressCallback) SWIFT_NAME(__compressUnsafe(blockSize:quality:error:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
     
-    /*const*/ char* __nonnull getData() SWIFT_RETURNS_INDEPENDENT_VALUE SWIFT_COMPUTED_PROPERTY { return _data; }
+    // TODO: Migrate to @lifebound Spans by returning std::span when this Swift feature will be available
+    /// Returns image contents.
+    const char* __nonnull getContents() SWIFT_RETURNS_INDEPENDENT_VALUE SWIFT_COMPUTED_PROPERTY { return _data; }
+    /// Returns image contents size.
+    long getContentsSize() SWIFT_COMPUTED_PROPERTY { return _width * _height * 4 * _componentSize; }
     
-    long getDataSize() SWIFT_COMPUTED_PROPERTY { return _width * _height * 4 * _componentSize; }
-    
+    /// Width of the image.
     long getWidth() SWIFT_COMPUTED_PROPERTY { return _width; }
     
+    /// Height of the image.
     long getHeight() SWIFT_COMPUTED_PROPERTY { return _height; }
     
+    /// Original number of components, `0` if unknown.
+    ///
+    /// Expected values:
+    /// - `1` - greyscale;
+    /// - `2` - greyscale with alpha channel;
+    /// - `3` - RGB;
+    /// - `4` - RGBA.
+    long getOriginalNumComponents() SWIFT_COMPUTED_PROPERTY { return _originalNumComponents; }
+    
+    /// Component size in bytes.
     long getComponentSize() SWIFT_COMPUTED_PROPERTY { return _componentSize; }
 }
-SWIFT_SHARED_REFERENCE(ASTCRawImageRetain, ASTCRawImageRelease)
-SWIFT_UNCHECKED_SENDABLE;
+SWIFT_PRIVATE_FILEID("ASTCEncoder/ASTCEncoder.swift")
+SWIFT_SHARED_REFERENCE(ASTCRawImageRetain, ASTCRawImageRelease);
 
 
-/// ASTC compressed image
+/// ASTC compressed image.
+///
+/// - Seealso: [Wikipedia](https://en.wikipedia.org/wiki/Adaptive_scalable_texture_compression), ["Adaptive Scalable Texture Compression" (PDF)](https://www.cs.cmu.edu/afs/cs/academic/class/15869-f11/www/readings/nystad12_astc.pdf).
 class ASTCImage {
 private:
     std::atomic<size_t> referenceCounter;
@@ -117,7 +182,12 @@ private:
     friend class ASTCRawImage;
     
     
-    ASTCImage(char* __nonnull data, long width, long height, long depth, long originalNumComponents, long componentSize, bool linear, bool hdr, long numBlocksWidth, long numBlocksHeight, long numBlocksDepth, long blockWidth, long blockHeight, long blockDepth);
+    ASTCImage(char* __nonnull data,
+              long width, long height, long depth,
+              long originalNumComponents, long componentSize,
+              bool linear, bool hdr,
+              long numBlocksWidth, long numBlocksHeight, long numBlocksDepth,
+              long blockWidth, long blockHeight, long blockDepth);
     ~ASTCImage();
     
 public:
@@ -141,10 +211,9 @@ public:
     
     const char* __nonnull getData() SWIFT_RETURNS_INDEPENDENT_VALUE SWIFT_COMPUTED_PROPERTY { return _data; }
 }
-SWIFT_SHARED_REFERENCE(ASTCImageRetain, ASTCImageRelease)
-SWIFT_UNCHECKED_SENDABLE;
+SWIFT_SHARED_REFERENCE(ASTCImageRetain, ASTCImageRelease);
 
 
-#endif // __cplusplus
+#endif
 
-#endif // ASTCEncoderC_hpp
+#endif
