@@ -26,9 +26,6 @@ public extension ASTCErrorInfo {
 }
 
 
-extension ASTCBlockSize: @retroactive Equatable {
-}
-
 extension ASTCBlockSize: @retroactive Hashable {
     public func hash(into hasher: inout Hasher) {
         hasher.combine(width)
@@ -50,11 +47,12 @@ public extension ASTCCompressionQuality {
 
 
 public extension ASTCRawImage {
-    static func create(data: UnsafeMutablePointer<CChar>, width: Int, height: Int, numComponents: Int, componentSize: Int, linear: Bool, hdr: Bool) throws(LibASTCError) -> ASTCRawImage {
+    static func create(data: UnsafeMutablePointer<CChar>, width: Int, height: Int, numComponents: Int, componentSize: Int, littleEndian: Bool, linear: Bool, hdr: Bool) throws(LibASTCError) -> ASTCRawImage {
         var error = ASTCErrorInfo()
         let image = ASTCRawImage.__createUnsafe(data, width: width, height: height,
                                                 numComponents: numComponents,
                                                 componentSize: componentSize,
+                                                littleEndian: littleEndian,
                                                 linear: linear, hdr: hdr,
                                                 error: &error)
         
@@ -97,13 +95,13 @@ public extension ASTCRawImage {
     
     
     func withData(_ action: (_ data: borrowing Data) throws -> Void) rethrows {
-        let contents = _data
+        let contents = _contents
         let data = Data(bytesNoCopy: contents, count: contentsSize, deallocator: .none)
         try action(data)
     }
     
     var data: Data {
-        Data(bytes: _data, count: contentsSize)
+        Data(bytes: _contents, count: contentsSize)
     }
 }
 
@@ -132,10 +130,30 @@ public extension ASTCRawImage {
             }
             
             //guard let colorSpace = CGColorSpace(name: CGColorSpace.extendedDisplayP3) else {
-            //guard let colorSpace = CGColorSpace(name: CGColorSpace.displayP3) else {
-            guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
+            guard let colorSpace = CGColorSpace(name: CGColorSpace.displayP3) else {
+            //guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
                 throw LibASTCError.other("No color space :(")
             }
+            
+            let componentMask: UInt32
+            let orderMask: UInt32
+            switch componentSize {
+            case 1:
+                componentMask = CGImageComponentInfo.integer.rawValue
+                orderMask = CGImageByteOrderInfo.orderDefault.rawValue
+                
+            case 2:
+                componentMask = CGImageComponentInfo.float.rawValue
+                orderMask = CGImageByteOrderInfo.order16Little.rawValue
+                
+            case 4:
+                componentMask = CGImageComponentInfo.float.rawValue
+                orderMask = CGImageByteOrderInfo.order32Little.rawValue
+                
+            default:
+                throw LibASTCError.other("Unsupported component size: \(componentSize)")
+            }
+            
             
             let image = CGImage(
                 width: width,
@@ -144,7 +162,7 @@ public extension ASTCRawImage {
                 bitsPerPixel: componentSize * 8 * 4,
                 bytesPerRow: width * componentSize * 4,
                 space: colorSpace,
-                bitmapInfo: .init(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrderDefault.rawValue),
+                bitmapInfo: .init(rawValue: CGImageAlphaInfo.last.rawValue | componentMask | orderMask),
                 provider: dataProvider,
                 decode: nil,
                 shouldInterpolate: true,

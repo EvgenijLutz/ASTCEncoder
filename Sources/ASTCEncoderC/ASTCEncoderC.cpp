@@ -10,8 +10,8 @@
 #include <ASTCEncoderC.hpp>
 #include <stdio.h>
 #include <thread>
-
 #include <string.h>
+#include <numeric>
 
 
 static void copyString(char* __nonnull dst, const char* __nullable src, long maxLen) {
@@ -134,9 +134,9 @@ bool ASTCBlockSize::operator == (const ASTCBlockSize& other) const {
 
 // MARK: - ASTCRawImage
 
-ASTCRawImage::ASTCRawImage(char* __nonnull data, long width, long height, long originalNumComponents, long componentSize, bool linear, bool hdr):
-referenceCounter(1),
-_data(data),
+ASTCRawImage::ASTCRawImage(char* __nonnull contents, long width, long height, long originalNumComponents, long componentSize, bool linear, bool hdr):
+_referenceCounter(1),
+_contents(contents),
 _width(width),
 _height(height),
 _originalNumComponents(originalNumComponents),
@@ -147,25 +147,60 @@ _hdr(hdr) {
 }
 
 ASTCRawImage::~ASTCRawImage() {
-    delete [] _data;
+    delete [] _contents;
 }
 
 
 ASTCRawImage* __nullable ASTCRawImageRetain(ASTCRawImage* __nullable image) SWIFT_RETURNS_UNRETAINED {
     if (image) {
-        image->referenceCounter.fetch_add(1);
+        image->_referenceCounter.fetch_add(1);
     }
     return image;
 }
 
 void ASTCRawImageRelease(ASTCRawImage* __nullable image) {
-    if (image && image->referenceCounter.fetch_sub(1) <= 1) {
+    if (image && image->_referenceCounter.fetch_sub(1) <= 1) {
         delete image;
     }
 }
 
 
-ASTCRawImage* __nullable ASTCRawImage::create(char* __nonnull data, long width, long height, long numComponents, long componentSize, bool linear, bool hdr, ASTCErrorInfo& error) SWIFT_RETURNS_RETAINED {
+template <typename SourceType, typename DestinationType>
+struct PixelInfo {
+    union {
+        SourceType sourceTypeValue;
+        unsigned char bytes[sizeof(SourceType)];
+        DestinationType destinationTypeValue;
+    };
+    
+    void convertToDestinationType(bool littleEndian) {
+        // Sanity check
+        static_assert(sizeof(SourceType) == sizeof(DestinationType), "Source and destination sizes should match");
+        
+        // Swap bytes instead of manually bit shift to make the value little endian
+        if (littleEndian == false) {
+            constexpr auto numBytes = sizeof(SourceType);
+            constexpr auto halfSize = numBytes / 2;
+            constexpr auto lastByteIndex = numBytes - 1;
+            for (auto byteIndex = 0; byteIndex < halfSize; byteIndex++) {
+                auto byte0 = bytes[byteIndex];
+                auto byte1 = bytes[lastByteIndex - byteIndex];
+                bytes[byteIndex] = byte1;
+                bytes[lastByteIndex - byteIndex] = byte0;
+            }
+        }
+        
+        // Cast to double - takes more space, produces less precision errors
+        auto value = static_cast<double>(sourceTypeValue);
+        
+        // Cast to the destination type
+        static auto sourceMax = std::numeric_limits<SourceType>::max();
+        destinationTypeValue = static_cast<DestinationType>(value / static_cast<double>(sourceMax));
+    }
+};
+
+
+ASTCRawImage* __nullable ASTCRawImage::create(char* __nonnull data, long width, long height, long numComponents, long componentSize, bool littleEndian, bool linear, bool hdr, ASTCErrorInfo& error) SWIFT_RETURNS_RETAINED {
     // Validate input data
     if (data == nullptr) {
         error.setErrorMessage("Image data not specified");
@@ -214,10 +249,28 @@ ASTCRawImage* __nullable ASTCRawImage::create(char* __nonnull data, long width, 
         }
     }
     
+    // Convert integer pixels to floats if component size is more than one byte
+    // Also convert to the little endian system
+    // PNG's integers must be in network byte order (big endian)
+    auto numPixels = width * height * 4;
+    if (componentSize == 2) {
+        auto pixels = reinterpret_cast<PixelInfo<unsigned short, __fp16>*>(dataCopy);
+        for (auto pixelIndex = 0; pixelIndex < numPixels; pixelIndex++) {
+            pixels[pixelIndex].convertToDestinationType(littleEndian);
+        }
+    }
+    else if (componentSize == 4) {
+        auto pixels = reinterpret_cast<PixelInfo<unsigned int, float>*>(dataCopy);
+        for (auto pixelIndex = 0; pixelIndex < numPixels; pixelIndex++) {
+            pixels[pixelIndex].convertToDestinationType(littleEndian);
+        }
+    }
+    
     // TODO: Add swizzle support
     
     // Success
-    return new ASTCRawImage(dataCopy, width, height, numComponents, componentSize,
+    return new ASTCRawImage(dataCopy, width, height,
+                            numComponents, componentSize,
                             linear, hdr);
 }
 
@@ -228,13 +281,16 @@ ASTCImage* __nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qual
     auto profile = astcenc_profile::ASTCENC_PRF_LDR;
     long blockWidth = blockSize.width;
     long blockHeight = blockSize.height;
-    long blockDepth = 1;
+    long blockDepth = blockSize.depth;
     auto result = astcenc_config_init(profile,
                                       static_cast<unsigned int>(blockWidth),
                                       static_cast<unsigned int>(blockHeight),
                                       static_cast<unsigned int>(blockDepth),
                                       quality,
-                                      0/*ASTCENC_FLG_USE_DECODE_UNORM8*/,
+                                      0
+                                      //ASTCENC_FLG_USE_ALPHA_WEIGHT
+                                      //ASTCENC_FLG_USE_DECODE_UNORM8
+                                      ,
                                       &config);
     if (result != astcenc_error::ASTCENC_SUCCESS) {
         error.setErrorMessage("Could not initialise config");
@@ -292,19 +348,46 @@ ASTCImage* __nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qual
     image.dim_y = static_cast<unsigned int>(_height);
     image.dim_z = static_cast<unsigned int>(1);
     // Data is always passed as 4 component image array
-    char* content = _data;
-    image.data = reinterpret_cast<void**>(&content);
+    void* content = static_cast<void*>(_contents);
+    image.data = &content;
     
     // Prepare swizzle info
+    // From the documentation:
+    // | Input data   | Encoding swizzle | Sampling swizzle |
+    // | ------------ | ---------------- | ---------------- |
+    // | 1 component  | RRR1             | .[rgb]           |
+    // | 2 components | RRRG             | .[rgb]a          |
+    // | 3 components | RGB1             | .rgb             |
+    // | 4 components | RGBA             | .rgba            |
     astcenc_swizzle swizzle;
-#if 0
-    swizzle.r = astcenc_swz::ASTCENC_SWZ_R;
-    //swizzle.a = astcenc_swz::ASTCENC_SWZ_1;
-    switch (numComponents) {
-        case 4: swizzle.a = astcenc_swz::ASTCENC_SWZ_A;
-        case 3: swizzle.b = astcenc_swz::ASTCENC_SWZ_B;
-        case 2: swizzle.g = astcenc_swz::ASTCENC_SWZ_G;
-        case 1: break;
+    switch (_originalNumComponents) {
+        case 1:
+            swizzle.r = astcenc_swz::ASTCENC_SWZ_R;
+            swizzle.g = astcenc_swz::ASTCENC_SWZ_R;
+            swizzle.b = astcenc_swz::ASTCENC_SWZ_R;
+            swizzle.a = astcenc_swz::ASTCENC_SWZ_1;
+            break;
+            
+        case 2:
+            swizzle.r = astcenc_swz::ASTCENC_SWZ_R;
+            swizzle.g = astcenc_swz::ASTCENC_SWZ_R;
+            swizzle.b = astcenc_swz::ASTCENC_SWZ_R;
+            swizzle.a = astcenc_swz::ASTCENC_SWZ_G;
+            break;
+            
+        case 3:
+            swizzle.r = astcenc_swz::ASTCENC_SWZ_R;
+            swizzle.g = astcenc_swz::ASTCENC_SWZ_G;
+            swizzle.b = astcenc_swz::ASTCENC_SWZ_B;
+            swizzle.a = astcenc_swz::ASTCENC_SWZ_1;
+            break;
+            
+        case 4:
+            swizzle.r = astcenc_swz::ASTCENC_SWZ_R;
+            swizzle.g = astcenc_swz::ASTCENC_SWZ_G;
+            swizzle.b = astcenc_swz::ASTCENC_SWZ_B;
+            swizzle.a = astcenc_swz::ASTCENC_SWZ_A;
+            break;
             
         default:
             error.setErrorMessage("Unsupported number of components");
@@ -312,13 +395,6 @@ ASTCImage* __nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qual
             callbackContext.reset();
             return nullptr;
     }
-#else
-    swizzle.r = astcenc_swz::ASTCENC_SWZ_R;
-    swizzle.g = astcenc_swz::ASTCENC_SWZ_G;
-    swizzle.b = astcenc_swz::ASTCENC_SWZ_B;
-//    swizzle.a = astcenc_swz::ASTCENC_SWZ_A;
-    swizzle.a = astcenc_swz::ASTCENC_SWZ_1;
-#endif
     
     // Allocate memory for astc compressed output image
     auto astcXCount = static_cast<long>(ceilf(static_cast<float>(_width) / static_cast<float>(blockWidth)));
@@ -357,9 +433,9 @@ ASTCImage* __nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qual
 
 // MARK: - ASTCImage
 
-ASTCImage::ASTCImage(char* __nonnull data, long width, long height, long depth, long originalNumComponents, long componentSize, bool linear, bool hdr, long numBlocksWidth, long numBlocksHeight, long numBlocksDepth, long blockWidth, long blockHeight, long blockDepth):
-referenceCounter(1),
-_data(data),
+ASTCImage::ASTCImage(char* __nonnull contents, long width, long height, long depth, long originalNumComponents, long componentSize, bool linear, bool hdr, long numBlocksWidth, long numBlocksHeight, long numBlocksDepth, long blockWidth, long blockHeight, long blockDepth):
+_referenceCounter(1),
+_contents(contents),
 _width(width),
 _height(height),
 _depth(depth),
@@ -377,20 +453,20 @@ _blockDepth(blockDepth) {
 }
 
 ASTCImage::~ASTCImage() {
-    delete [] _data;
+    delete [] _contents;
 }
 
 
 ASTCImage* __nullable ASTCImageRetain(ASTCImage* __nullable image) {
     if (image) {
-        image->referenceCounter.fetch_add(1);
+        image->_referenceCounter.fetch_add(1);
     }
     
     return image;
 }
 
 void ASTCImageRelease(ASTCImage* __nullable image) {
-    if (image && image->referenceCounter.fetch_sub(1) <= 1) {
+    if (image && image->_referenceCounter.fetch_sub(1) <= 1) {
         delete image;
     }
 }
@@ -404,8 +480,8 @@ ASTCRawImage* __nullable ASTCImage::decompress(ASTCErrorInfo& error, void* __nul
                                       static_cast<unsigned int>(_blockWidth),
                                       static_cast<unsigned int>(_blockHeight),
                                       static_cast<unsigned int>(_blockDepth),
-                                      ASTCENC_PRE_MEDIUM, // ASTCENC_PRE_EXHAUSTIVE,
-                                      /*ASTCENC_FLG_USE_DECODE_UNORM8 |*/ ASTCENC_FLG_DECOMPRESS_ONLY,
+                                      ASTCENC_PRE_EXHAUSTIVE,
+                                      ASTCENC_FLG_DECOMPRESS_ONLY,
                                       &config);
     if (result != astcenc_error::ASTCENC_SUCCESS) {
         error.setErrorMessage("Could not initialise config");
@@ -458,36 +534,48 @@ ASTCRawImage* __nullable ASTCImage::decompress(ASTCErrorInfo& error, void* __nul
     
     // Prepare swizzle info
     astcenc_swizzle swizzle;
-#if 0
-    swizzle.r = astcenc_swz::ASTCENC_SWZ_R;
-    //swizzle.a = astcenc_swz::ASTCENC_SWZ_1;
-    switch (numComponents) {
-        case 4: swizzle.a = astcenc_swz::ASTCENC_SWZ_A;
-        case 3: swizzle.b = astcenc_swz::ASTCENC_SWZ_B;
-        case 2: swizzle.g = astcenc_swz::ASTCENC_SWZ_G;
-        case 1: break;
+    switch (_originalNumComponents) {
+        case 1:
+            swizzle.r = astcenc_swz::ASTCENC_SWZ_R;
+            swizzle.g = astcenc_swz::ASTCENC_SWZ_R;
+            swizzle.b = astcenc_swz::ASTCENC_SWZ_R;
+            swizzle.a = astcenc_swz::ASTCENC_SWZ_1;
+            break;
+            
+        case 2:
+            swizzle.r = astcenc_swz::ASTCENC_SWZ_R;
+            swizzle.g = astcenc_swz::ASTCENC_SWZ_R;
+            swizzle.b = astcenc_swz::ASTCENC_SWZ_R;
+            swizzle.a = astcenc_swz::ASTCENC_SWZ_G;
+            break;
+            
+        case 3:
+            swizzle.r = astcenc_swz::ASTCENC_SWZ_R;
+            swizzle.g = astcenc_swz::ASTCENC_SWZ_G;
+            swizzle.b = astcenc_swz::ASTCENC_SWZ_B;
+            swizzle.a = astcenc_swz::ASTCENC_SWZ_1;
+            break;
+            
+        case 4:
+            swizzle.r = astcenc_swz::ASTCENC_SWZ_R;
+            swizzle.g = astcenc_swz::ASTCENC_SWZ_G;
+            swizzle.b = astcenc_swz::ASTCENC_SWZ_B;
+            swizzle.a = astcenc_swz::ASTCENC_SWZ_A;
+            break;
             
         default:
             error.setErrorMessage("Unsupported number of components");
-            delete [] content;
             astcenc_context_free(context);
             callbackContext.reset();
             return nullptr;
     }
-#else
-    swizzle.r = astcenc_swz::ASTCENC_SWZ_R;
-    swizzle.g = astcenc_swz::ASTCENC_SWZ_G;
-    swizzle.b = astcenc_swz::ASTCENC_SWZ_B;
-//    swizzle.a = astcenc_swz::ASTCENC_SWZ_A;
-    swizzle.a = astcenc_swz::ASTCENC_SWZ_1;
-#endif
     
     
     auto dataLength = _numBlocksWidth * _numBlocksHeight * _numBlocksDepth * 16;
     
     
     // Decompress image
-    auto compressedData = reinterpret_cast<uint8_t*>(_data);
+    auto compressedData = reinterpret_cast<uint8_t*>(_contents);
     result = astcenc_decompress_image(context, compressedData, dataLength, &image, &swizzle, 0);
     if (result != astcenc_error::ASTCENC_SUCCESS) {
         error.setErrorMessage("Could not decompress image");
@@ -500,6 +588,32 @@ ASTCRawImage* __nullable ASTCImage::decompress(ASTCErrorInfo& error, void* __nul
     // Clean up
     astcenc_context_free(context);
     callbackContext.reset();
+    
+    // Convert half float pixels to integers
+//    if (_componentSize == 2) {
+//        auto shorts = reinterpret_cast<unsigned short*>(content);
+//        auto halfs = reinterpret_cast<__fp16*>(content);
+//        for (auto j = 0; j < _height; j++) {
+//            for (auto i = 0; i < _width; i++) {
+//                auto index = j * _width * 4 + i * 4;
+//                auto max = std::numeric_limits<unsigned short>::max();
+//                for (auto i = 0; i < 4; i++) {
+//#if 1
+//                    auto value = static_cast<double>(halfs[index + i]);
+//                    auto original = shorts[index + i];
+//                    auto converted = static_cast<unsigned short>(round(value * static_cast<double>(max)));
+//                    converted = ((converted << 8) & 0xFF00) | ((converted >> 8) & 0x00FF);
+//                    shorts[index + i] = converted;
+//#else
+//                    
+//                    auto value = shorts[index + i];
+//                    value = ((value << 8) & 0xFF00) | ((value >> 8) & 0x00FF);
+//                    shorts[index + i] = value;
+//#endif
+//                }
+//            }
+//        }
+//    }
     
     return new ASTCRawImage(content, _width, _height, _originalNumComponents, _componentSize, _linear, _hdr);
 }

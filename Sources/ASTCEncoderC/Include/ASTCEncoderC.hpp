@@ -42,6 +42,8 @@ public:
 
 
 /// ASTC block dimensions.
+///
+/// Access ``ASTCBlockSize``'s predefined static variables like ``ASTCBlockSize/_4x4-type.property`` to get valid block sizes.
 struct ASTCBlockSize {
     long width;
     long height;
@@ -75,6 +77,12 @@ struct ASTCBlockSize {
     const static ASTCBlockSize _6x6x6;
     
     
+    ASTCBlockSize() {
+        this->width = 0;
+        this->height = 0;
+        this->depth = 0;
+    }
+    
     ASTCBlockSize(long width, long height, long depth) {
         this->width = width;
         this->height = height;
@@ -82,12 +90,12 @@ struct ASTCBlockSize {
     }
     
     bool operator == (const ASTCBlockSize& other) const;
-};
+} SWIFT_CONFORMS_TO_PROTOCOL(Swift.Equatable);
 
 
 /// ASTC encoder progress callback.
 ///
-/// Specify a callback in the ``ASTCRawImage/compress`` method to track compression progress.
+/// Specify a callback in the ``ASTCRawImage/compress-method`` method to track compression progress.
 ///
 /// - Returns: `true` if encoder should stop encoding, otherwise `false`.
 typedef bool (* ASTCEncoderProgressCallback)(void* __nullable userInfo, float progress);
@@ -95,16 +103,28 @@ typedef bool (* ASTCEncoderProgressCallback)(void* __nullable userInfo, float pr
 
 /// Uncompressed image that is ready for ASTC compression.
 ///
-/// At the moment it's a 2D image.
+/// The internal representation has always 4 channels in RGBA order. Every component is stored in the **little endian** system. You acces each component depending of the number of original components:
+///
+/// ```plain
+/// | Input data   | Encoding swizzle | Sampling swizzle |
+/// | ------------ | ---------------- | ---------------- |
+/// | 1 component  | RRR1             | .[rgb]           |
+/// | 2 components | RRRG             | .[rgb]a          |
+/// | 3 components | RGB1             | .rgb             |
+/// | 4 components | RGBA             | .rgba            |
+/// ```
+///
+/// - Note: This object is immutable. Thus, it's safe to use it from concurrent threads. At the moment it's a 2D image, **depth support coming soon**.
 class ASTCRawImage {
 private:
-    std::atomic<size_t> referenceCounter;
+    std::atomic<size_t> _referenceCounter;
     
-    char* __nonnull _data;
+    /*const*/ char* __nonnull _contents;
     const long _width;
     const long _height;
     const long _originalNumComponents;
     const long _componentSize;
+    /// Linear or sRGB
     const bool _linear;
     const bool _hdr;
     
@@ -115,25 +135,50 @@ private:
     friend class ASTCImage;
     
     
-    ASTCRawImage(char* __nonnull data, long width, long height, long originalNumComponents, long componentSize, bool linear, bool hdr);
+    ASTCRawImage(char* __nonnull contents, long width, long height, long originalNumComponents, long componentSize, bool linear, bool hdr);
     ~ASTCRawImage();
     
 public:
-    static ASTCRawImage* __nullable create(char* __nonnull data, long width, long height, long numComponents, long componentSize, bool linear, bool hdr, ASTCErrorInfo& error) SWIFT_NAME(__createUnsafe(_:width:height:numComponents:componentSize:linear:hdr:error:)) SWIFT_RETURNS_RETAINED;
+    /// Creates an instance of ``ASTCRawImage`` by copying image contents.
+    ///
+    /// The `contents` component values are expected to be either unsigned integers for standard dynamic range (`hdr = false`) or floating poins for extended dynamic range (`hdr = true` and `componentSize` is either `2` or `4`), depending on the `hdr` setting.
+    ///
+    /// - Parameter contents: image contens to copy in `R`, `RG`, `RGB` or `RGBA` pixel format.
+    /// - Parameter width: width, surprise.
+    /// - Parameter height: height.
+    /// - Parameter numComponents: number of components. The valid values are `1` (`R` - grey), `2` (`RG` - grey with alpha channel), `3` (`RGB` - red, green and blue channels) or `4` (`RGBA` - red, green, blue and alpha channels).
+    /// - Parameter componentSize: pixel component size in **bytes**. The valid values are `1`, `2` or `4`.
+    /// - Parameter littleEndian: whether the components are in little endian or big endian order. For instance, `png`'s contents are usually represented in big endian order.
+    /// - Parameter linear: whether the components are in `linear` or `sRGB` (gamma-compressed) colour space. If the `hdr` setting is `true`, then this value is ignored and assumed to be `true`.
+    /// - Parameter hdr: whether the components represent extended dynamic range. I that case, components in the `contents` input are expected to be floating point values and `componentSize` should be either `2` (16-bit float) or `4` (32-bit float).
+    /// - Parameter error: error description container is something goes wrong.
+    ///
+    /// - Returns: an instance of ``ASTCRawImage`` if all input data is valid. Otherwise `null` is returned and `error` will contain verbose information what went wrong.
+    static ASTCRawImage* __nullable create(char* __nonnull contents, long width, long height, long numComponents, long componentSize, /*componentType = integer, float */ bool littleEndian, bool linear, bool hdr, ASTCErrorInfo& error) SWIFT_NAME(__createUnsafe(_:width:height:numComponents:componentSize:littleEndian:linear:hdr:error:)) SWIFT_RETURNS_RETAINED;
     
-    ASTCImage* __nullable compress(ASTCBlockSize blockDimensions, float quality, ASTCErrorInfo& error, void* __nullable userInfo, ASTCEncoderProgressCallback __nullable progressCallback) SWIFT_NAME(__compressUnsafe(blockSize:quality:error:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
+    
+    /// Compresses image contents using specified block size and compression quality into an ``ASTCImage``.
+    ///
+    /// - Returns: an instance of ``ASTCImage`` if all input data is valid. Otherwise `null` is returned and `error` will contain verbose information what went wrong.
+    ///
+    /// - Warning: This method is computationally intensive. Delegate its work to a concurrent thread or task to make sure that your working thread is not blocked. When delegating to a concurrent thread, don't forget to retain this object using the ``ASTCRawImageRetain`` function before passing to other context and ``ASTCRawImageRelease`` after finishing work on a concurrent thread to acheive proper retain/release cycles and make sure that the object does not get prematurely destroyed.
+    ASTCImage* __nullable compress(ASTCBlockSize blockSize, float quality, ASTCErrorInfo& error, void* __nullable userInfo, ASTCEncoderProgressCallback __nullable progressCallback) SWIFT_NAME(__compressUnsafe(blockSize:quality:error:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
+    
     
     // TODO: Migrate to @lifebound Spans by returning std::span when this Swift feature will be available
     /// Returns image contents.
-    const char* __nonnull getContents() SWIFT_RETURNS_INDEPENDENT_VALUE SWIFT_COMPUTED_PROPERTY { return _data; }
+    const char* __nonnull getContents() SWIFT_RETURNS_INDEPENDENT_VALUE SWIFT_COMPUTED_PROPERTY { return _contents; }
     /// Returns image contents size.
     long getContentsSize() SWIFT_COMPUTED_PROPERTY { return _width * _height * 4 * _componentSize; }
+    
     
     /// Width of the image.
     long getWidth() SWIFT_COMPUTED_PROPERTY { return _width; }
     
+    
     /// Height of the image.
     long getHeight() SWIFT_COMPUTED_PROPERTY { return _height; }
+    
     
     /// Original number of components, `0` if unknown.
     ///
@@ -144,21 +189,27 @@ public:
     /// - `4` - RGBA.
     long getOriginalNumComponents() SWIFT_COMPUTED_PROPERTY { return _originalNumComponents; }
     
+    
     /// Component size in bytes.
+    ///
+    /// Expected values are `1` (8 bit uint), `2` (16 bit float) and `4` (32 bit float).
     long getComponentSize() SWIFT_COMPUTED_PROPERTY { return _componentSize; }
 }
+SWIFT_UNCHECKED_SENDABLE
 SWIFT_PRIVATE_FILEID("ASTCEncoder/ASTCEncoder.swift")
 SWIFT_SHARED_REFERENCE(ASTCRawImageRetain, ASTCRawImageRelease);
 
 
 /// ASTC compressed image.
 ///
+/// - Note: This object is immutable. Thus, it's safe to use it from concurrent threads.
+///
 /// - Seealso: [Wikipedia](https://en.wikipedia.org/wiki/Adaptive_scalable_texture_compression), ["Adaptive Scalable Texture Compression" (PDF)](https://www.cs.cmu.edu/afs/cs/academic/class/15869-f11/www/readings/nystad12_astc.pdf).
 class ASTCImage {
 private:
-    std::atomic<size_t> referenceCounter;
+    std::atomic<size_t> _referenceCounter;
     
-    /*const*/ char* __nonnull _data;
+    /*const*/ char* __nonnull _contents;
     const long _width;
     const long _height;
     const long _depth;
@@ -182,7 +233,7 @@ private:
     friend class ASTCRawImage;
     
     
-    ASTCImage(char* __nonnull data,
+    ASTCImage(char* __nonnull contents,
               long width, long height, long depth,
               long originalNumComponents, long componentSize,
               bool linear, bool hdr,
@@ -204,13 +255,12 @@ public:
     
     /// Size of each component in bytes of decompressed image.
     ///
-    /// Expected values are `1` (8 bit), `2` (16 bit) and `4` (32 bit).
+    /// Expected values are `1` (8 bit uint), `2` (16 bit float) and `4` (32 bit float).
     long getComponentSize() SWIFT_COMPUTED_PROPERTY { return _componentSize; }
     
-    //long getComponentSize() SWIFT_COMPUTED_PROPERTY { return _componentSize; }
-    
-    const char* __nonnull getData() SWIFT_RETURNS_INDEPENDENT_VALUE SWIFT_COMPUTED_PROPERTY { return _data; }
+    const char* __nonnull getContents() SWIFT_RETURNS_INDEPENDENT_VALUE SWIFT_COMPUTED_PROPERTY { return _contents; }
 }
+SWIFT_UNCHECKED_SENDABLE
 SWIFT_SHARED_REFERENCE(ASTCImageRetain, ASTCImageRelease);
 
 
