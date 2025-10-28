@@ -5,8 +5,7 @@
 //  Created by Evgenij Lutz on 26.08.25.
 //
 
-#ifndef ASTCEncoderC_hpp
-#define ASTCEncoderC_hpp
+#pragma once
 
 #if defined __cplusplus
 
@@ -101,6 +100,21 @@ struct ASTCBlockSize {
 typedef bool (* ASTCEncoderProgressCallback)(void* __nullable userInfo, float progress);
 
 
+/// Color space of pixel components.
+enum class ASTCRawImageColorSpace: long {
+    /// Color space is unknown, the color space is assumed to be linear SDR (standard dynamic range - color values are in range `[0; 1]`).
+    unknown = 0,
+    /// Pixel colors are not tighed to a specific color space. Instead they depend on screen's color space the image will be rendered on. The color profile is assumed to be linear SDR.
+    deviceDependant = 1,
+    /// sRGB color space. The color profile can be linear SDR or gamma corrected SDR.
+    sRGB = 2,
+    /// DCI-P3 color space. The color profile can be linear SDR, gamma corrected SDR or linear HDR (high dynamic range - color values are in range `[0; +∞]`).
+    P3 = 3
+};
+
+
+// MARK: - ASTCRawImage
+
 /// Uncompressed image that is ready for ASTC compression.
 ///
 /// The internal representation has always 4 channels in RGBA order. Every component is stored in the **little endian** system. You acces each component depending of the number of original components:
@@ -122,11 +136,18 @@ private:
     /*const*/ char* __nonnull _contents;
     const long _width;
     const long _height;
+    //const long _depth;
     const long _originalNumComponents;
     const long _componentSize;
-    /// Linear or sRGB
+    /// Color profile.
+    ///
+    /// See ``ASTCRawImageColorSpace`` options for more information about what combinations of `_linear` and `_hdr` settings are possible.
+    const ASTCRawImageColorSpace _colorSpace;
+    /// Linear or gamma-compressed. If the value is set to `false`, then the `_hdr` value is ignored and assumed to be `false`.
     const bool _linear;
+    /// High dynamic range support. The `_linear` property has to be true.
     const bool _hdr;
+    const bool _ldrAlpha;
     
     
     friend ASTCRawImage* __nullable ASTCRawImageRetain(ASTCRawImage* __nullable image) SWIFT_RETURNS_UNRETAINED;
@@ -135,7 +156,7 @@ private:
     friend class ASTCImage;
     
     
-    ASTCRawImage(char* __nonnull contents, long width, long height, long originalNumComponents, long componentSize, bool linear, bool hdr);
+    ASTCRawImage(char* __nonnull contents, long width, long height, long originalNumComponents, long componentSize, ASTCRawImageColorSpace colorProfile, bool linear, bool hdr, bool ldrAlpha);
     ~ASTCRawImage();
     
 public:
@@ -148,13 +169,16 @@ public:
     /// - Parameter height: height.
     /// - Parameter numComponents: number of components. The valid values are `1` (`R` - grey), `2` (`RG` - grey with alpha channel), `3` (`RGB` - red, green and blue channels) or `4` (`RGBA` - red, green, blue and alpha channels).
     /// - Parameter componentSize: pixel component size in **bytes**. The valid values are `1`, `2` or `4`.
+    /// - Parameter integerComponents: wheter the input components are integers. If `true`, then it's unsigned integer that maps between `0` and `1` (max value depending on the `componentSize`). For floating point components, the `componentSize` should be at least two bytes, otherwise the parameter is ignored and assumed to be `true`.
     /// - Parameter littleEndian: whether the components are in little endian or big endian order. For instance, `png`'s contents are usually represented in big endian order.
-    /// - Parameter linear: whether the components are in `linear` or `sRGB` (gamma-compressed) colour space. If the `hdr` setting is `true`, then this value is ignored and assumed to be `true`.
-    /// - Parameter hdr: whether the components represent extended dynamic range. I that case, components in the `contents` input are expected to be floating point values and `componentSize` should be either `2` (16-bit float) or `4` (32-bit float).
+    /// - Parameter colorSpace: color space.
+    /// - Parameter linear: whether the components are in `linear` or `gamma-compressed` colour profile.
+    /// - Parameter hdr: whether the components represent extended dynamic range. I that case, components in the `contents` input are expected to be floating point values (i.e. the `integerComponents` parameter should be `false`), `componentSize` should be either `2` (16-bit float) or `4` (32-bit float) and the `linear` parameter should be `true`, otherwise this parameter is ignored and assumed to be `false`.
+    /// - Parameter ldrAlpha: whether the last channel is used as LDR alpha channel when `hdr` setting is `true` and `numComponents` is set to `4`. This options helps ASTC encoder how to interpret the data.
     /// - Parameter error: error description container is something goes wrong.
     ///
     /// - Returns: an instance of ``ASTCRawImage`` if all input data is valid. Otherwise `null` is returned and `error` will contain verbose information what went wrong.
-    static ASTCRawImage* __nullable create(char* __nonnull contents, long width, long height, long numComponents, long componentSize, /*componentType = integer, float */ bool littleEndian, bool linear, bool hdr, ASTCErrorInfo& error) SWIFT_NAME(__createUnsafe(_:width:height:numComponents:componentSize:littleEndian:linear:hdr:error:)) SWIFT_RETURNS_RETAINED;
+    static ASTCRawImage* __nullable create(char* __nonnull contents, long width, long height, long numComponents, long componentSize, bool integerComponents, bool littleEndian, ASTCRawImageColorSpace colorSpace, bool linear, bool hdr, bool ldrAlpha, ASTCErrorInfo& error) SWIFT_NAME(__createUnsafe(_:width:height:numComponents:componentSize:integerComponents:littleEndian:colorSpace:linear:hdr:ldrAlpha:error:)) SWIFT_RETURNS_RETAINED;
     
     
     /// Compresses image contents using specified block size and compression quality into an ``ASTCImage``.
@@ -194,11 +218,18 @@ public:
     ///
     /// Expected values are `1` (8 bit uint), `2` (16 bit float) and `4` (32 bit float).
     long getComponentSize() SWIFT_COMPUTED_PROPERTY { return _componentSize; }
+    
+    /// Color profile.
+    ASTCRawImageColorSpace getColorProfile() SWIFT_COMPUTED_PROPERTY { return _colorSpace; }
+    bool getLinear() SWIFT_COMPUTED_PROPERTY { return _linear; }
+    bool getHDR() SWIFT_COMPUTED_PROPERTY { return _hdr; }
 }
 SWIFT_UNCHECKED_SENDABLE
 SWIFT_PRIVATE_FILEID("ASTCEncoder/ASTCEncoder.swift")
 SWIFT_SHARED_REFERENCE(ASTCRawImageRetain, ASTCRawImageRelease);
 
+
+// MARK: - ASTCImage
 
 /// ASTC compressed image.
 ///
@@ -215,16 +246,15 @@ private:
     const long _depth;
     const long _originalNumComponents;
     const long _componentSize;
+    const ASTCRawImageColorSpace _colorSpace;
     const bool _linear;
     const bool _hdr;
+    const bool _ldrAlpha;
     
     const long _numBlocksWidth;
     const long _numBlocksHeight;
     const long _numBlocksDepth;
-    
-    const long _blockWidth;
-    const long _blockHeight;
-    const long _blockDepth;
+    const ASTCBlockSize _blockSize;
     
     
     friend ASTCImage* __nullable ASTCImageRetain(ASTCImage* __nullable image) SWIFT_RETURNS_UNRETAINED;
@@ -236,9 +266,9 @@ private:
     ASTCImage(char* __nonnull contents,
               long width, long height, long depth,
               long originalNumComponents, long componentSize,
-              bool linear, bool hdr,
+              ASTCRawImageColorSpace colorProfile, bool linear, bool hdr, bool ldrAlpha,
               long numBlocksWidth, long numBlocksHeight, long numBlocksDepth,
-              long blockWidth, long blockHeight, long blockDepth);
+              ASTCBlockSize blockSize);
     ~ASTCImage();
     
 public:
@@ -263,7 +293,5 @@ public:
 SWIFT_UNCHECKED_SENDABLE
 SWIFT_SHARED_REFERENCE(ASTCImageRetain, ASTCImageRelease);
 
-
-#endif
 
 #endif

@@ -47,13 +47,17 @@ public extension ASTCCompressionQuality {
 
 
 public extension ASTCRawImage {
-    static func create(data: UnsafeMutablePointer<CChar>, width: Int, height: Int, numComponents: Int, componentSize: Int, littleEndian: Bool, linear: Bool, hdr: Bool) throws(LibASTCError) -> ASTCRawImage {
+    static func create(data: UnsafeMutablePointer<CChar>, width: Int, height: Int, numComponents: Int, componentSize: Int, integerComponents: Bool, littleEndian: Bool, colorSpace: ASTCRawImageColorSpace, linear: Bool, hdr: Bool, ldrAlpha: Bool) throws(LibASTCError) -> ASTCRawImage {
         var error = ASTCErrorInfo()
         let image = ASTCRawImage.__createUnsafe(data, width: width, height: height,
                                                 numComponents: numComponents,
                                                 componentSize: componentSize,
+                                                integerComponents: integerComponents,
                                                 littleEndian: littleEndian,
-                                                linear: linear, hdr: hdr,
+                                                colorSpace: colorSpace,
+                                                linear: linear,
+                                                hdr: hdr,
+                                                ldrAlpha: ldrAlpha,
                                                 error: &error)
         
         guard let image else {
@@ -94,6 +98,13 @@ public extension ASTCRawImage {
     }
     
     
+    func compress(blockSize: ASTCBlockSize, quality: ASTCCompressionQuality, _ progressCallback: @escaping @Sendable (_ progress: Float) -> Void = { _ in }) async throws -> ASTCImage {
+        try await Task {
+            try compress(blockSize: blockSize, quality: quality, progressCallback)
+        }.value
+    }
+    
+    
     func withData(_ action: (_ data: borrowing Data) throws -> Void) rethrows {
         let contents = _contents
         let data = Data(bytesNoCopy: contents, count: contentsSize, deallocator: .none)
@@ -129,11 +140,41 @@ public extension ASTCRawImage {
                 throw LibASTCError.other("No data provider :(")
             }
             
-            //guard let colorSpace = CGColorSpace(name: CGColorSpace.extendedDisplayP3) else {
-            guard let colorSpace = CGColorSpace(name: CGColorSpace.displayP3) else {
-            //guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
+            
+            // Retreive colour space
+            let colorSpaceName: CFString? = switch colorProfile {
+            case .unknown:
+                //CGColorSpace.extendedDisplayP3
+                CGColorSpace.displayP3
+                
+            case .deviceDependant:
+                CGColorSpace.genericRGBLinear
+                
+            case .sRGB:
+                linear ? CGColorSpace.linearSRGB : CGColorSpace.sRGB
+                
+            case .P3:
+                if linear {
+                    hdr ? CGColorSpace.extendedLinearDisplayP3 : CGColorSpace.linearDisplayP3
+                }
+                else {
+                    hdr ? CGColorSpace.extendedDisplayP3 : CGColorSpace.displayP3
+                }
+                
+                //if hdr {
+                //    linear ? CGColorSpace.extendedLinearDisplayP3 : CGColorSpace.extendedDisplayP3
+                //}
+                //else {
+                //    linear ? CGColorSpace.linearDisplayP3 : CGColorSpace.displayP3
+                //}
+                
+            default:
+                CGColorSpace.sRGB
+            }
+            guard let colorSpaceName, let colorSpace = CGColorSpace(name: colorSpaceName) else {
                 throw LibASTCError.other("No color space :(")
             }
+            
             
             let componentMask: UInt32
             let orderMask: UInt32

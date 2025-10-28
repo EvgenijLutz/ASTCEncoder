@@ -134,15 +134,17 @@ bool ASTCBlockSize::operator == (const ASTCBlockSize& other) const {
 
 // MARK: - ASTCRawImage
 
-ASTCRawImage::ASTCRawImage(char* __nonnull contents, long width, long height, long originalNumComponents, long componentSize, bool linear, bool hdr):
+ASTCRawImage::ASTCRawImage(char* __nonnull contents, long width, long height, long originalNumComponents, long componentSize, ASTCRawImageColorSpace colorProfile, bool linear, bool hdr, bool ldrAlpha):
 _referenceCounter(1),
 _contents(contents),
 _width(width),
 _height(height),
 _originalNumComponents(originalNumComponents),
 _componentSize(componentSize),
+_colorSpace(colorProfile),
 _linear(linear),
-_hdr(hdr) {
+_hdr(hdr),
+_ldrAlpha(ldrAlpha) {
     // Done
 }
 
@@ -200,7 +202,7 @@ struct PixelInfo {
 };
 
 
-ASTCRawImage* __nullable ASTCRawImage::create(char* __nonnull data, long width, long height, long numComponents, long componentSize, bool littleEndian, bool linear, bool hdr, ASTCErrorInfo& error) SWIFT_RETURNS_RETAINED {
+ASTCRawImage* __nullable ASTCRawImage::create(char* __nonnull data, long width, long height, long numComponents, long componentSize, bool integerComponents, bool littleEndian, ASTCRawImageColorSpace colorProfile, bool linear, bool hdr, bool ldrAlpha, ASTCErrorInfo& error) SWIFT_RETURNS_RETAINED {
     // Validate input data
     if (data == nullptr) {
         error.setErrorMessage("Image data not specified");
@@ -227,6 +229,21 @@ ASTCRawImage* __nullable ASTCRawImage::create(char* __nonnull data, long width, 
         return nullptr;
     }
     
+    // Components are allowed to be floats only if componentSize takes at least two bytes.
+    if (componentSize == 1) {
+        integerComponents = true;
+    }
+    
+    // HDR image can only contain floating point values
+    if (integerComponents) {
+        hdr = false;
+    }
+    
+    // HDR image can be only in linear color space
+    if (linear == false) {
+        hdr = false;
+    }
+    
     
     // Create image data
     auto imageDataSize = width * height * componentSize * 4;
@@ -249,40 +266,58 @@ ASTCRawImage* __nullable ASTCRawImage::create(char* __nonnull data, long width, 
         }
     }
     
-    // Convert integer pixels to floats if component size is more than one byte
-    // Also convert to the little endian system
-    // PNG's integers must be in network byte order (big endian)
-    auto numPixels = width * height * 4;
-    if (componentSize == 2) {
-        auto pixels = reinterpret_cast<PixelInfo<unsigned short, __fp16>*>(dataCopy);
-        for (auto pixelIndex = 0; pixelIndex < numPixels; pixelIndex++) {
-            pixels[pixelIndex].convertToDestinationType(littleEndian);
+    // Convert endianness and integer pixels to floats if component size is more than one byte
+    if (integerComponents && componentSize > 1) {
+        // Also convert to the little endian system
+        // PNG's integers are in network byte order (big endian)
+        auto numPixels = width * height * 4;
+        if (componentSize == 2) {
+            auto pixels = reinterpret_cast<PixelInfo<unsigned short, __fp16>*>(dataCopy);
+            for (auto pixelIndex = 0; pixelIndex < numPixels; pixelIndex++) {
+                pixels[pixelIndex].convertToDestinationType(littleEndian);
+            }
+        }
+        else if (componentSize == 4) {
+            auto pixels = reinterpret_cast<PixelInfo<unsigned int, float>*>(dataCopy);
+            for (auto pixelIndex = 0; pixelIndex < numPixels; pixelIndex++) {
+                pixels[pixelIndex].convertToDestinationType(littleEndian);
+            }
         }
     }
-    else if (componentSize == 4) {
-        auto pixels = reinterpret_cast<PixelInfo<unsigned int, float>*>(dataCopy);
-        for (auto pixelIndex = 0; pixelIndex < numPixels; pixelIndex++) {
-            pixels[pixelIndex].convertToDestinationType(littleEndian);
-        }
-    }
-    
-    // TODO: Add swizzle support
     
     // Success
     return new ASTCRawImage(dataCopy, width, height,
                             numComponents, componentSize,
-                            linear, hdr);
+                            colorProfile,
+                            linear,
+                            hdr, ldrAlpha);
+}
+
+
+static astcenc_profile makeASTCEncoderProfile(bool linear, bool hdr, bool ldrAlpha) {
+    if (linear) {
+        return astcenc_profile::ASTCENC_PRF_LDR;
+    }
+    
+    if (hdr) {
+        if (ldrAlpha) {
+            return astcenc_profile::ASTCENC_PRF_HDR_RGB_LDR_A;
+        }
+        
+        return astcenc_profile::ASTCENC_PRF_HDR;
+    }
+    
+    return astcenc_profile::ASTCENC_PRF_LDR_SRGB;
 }
 
 
 ASTCImage* __nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float quality, ASTCErrorInfo& error, void* __nullable userInfo, ASTCEncoderProgressCallback __nullable progressCallback) {
     // Prepare ASTC encoder config
     astcenc_config config;
-    auto profile = astcenc_profile::ASTCENC_PRF_LDR;
     long blockWidth = blockSize.width;
     long blockHeight = blockSize.height;
     long blockDepth = blockSize.depth;
-    auto result = astcenc_config_init(profile,
+    auto result = astcenc_config_init(makeASTCEncoderProfile(_linear, _hdr, _ldrAlpha),
                                       static_cast<unsigned int>(blockWidth),
                                       static_cast<unsigned int>(blockHeight),
                                       static_cast<unsigned int>(blockDepth),
@@ -427,13 +462,13 @@ ASTCImage* __nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qual
     astcenc_context_free(context);
     callbackContext.reset();
     
-    return new ASTCImage(astcData, _width, _height, 1, _originalNumComponents, _componentSize, _linear, _hdr, astcXCount, astcYCount, 1, blockWidth, blockHeight, blockDepth);
+    return new ASTCImage(astcData, _width, _height, 1, _originalNumComponents, _componentSize, _colorSpace, _linear, _hdr, _ldrAlpha, astcXCount, astcYCount, 1, blockSize);
 }
 
 
 // MARK: - ASTCImage
 
-ASTCImage::ASTCImage(char* __nonnull contents, long width, long height, long depth, long originalNumComponents, long componentSize, bool linear, bool hdr, long numBlocksWidth, long numBlocksHeight, long numBlocksDepth, long blockWidth, long blockHeight, long blockDepth):
+ASTCImage::ASTCImage(char* __nonnull contents, long width, long height, long depth, long originalNumComponents, long componentSize, ASTCRawImageColorSpace colorProfile, bool linear, bool hdr, bool ldrAlpha, long numBlocksWidth, long numBlocksHeight, long numBlocksDepth, ASTCBlockSize blockSize):
 _referenceCounter(1),
 _contents(contents),
 _width(width),
@@ -441,14 +476,14 @@ _height(height),
 _depth(depth),
 _originalNumComponents(originalNumComponents),
 _componentSize(componentSize),
+_colorSpace(colorProfile),
 _linear(linear),
 _hdr(hdr),
+_ldrAlpha(ldrAlpha),
 _numBlocksWidth(numBlocksWidth),
 _numBlocksHeight(numBlocksHeight),
 _numBlocksDepth(numBlocksDepth),
-_blockWidth(blockWidth),
-_blockHeight(blockHeight),
-_blockDepth(blockDepth) {
+_blockSize(blockSize) {
     // Done
 }
 
@@ -475,11 +510,10 @@ void ASTCImageRelease(ASTCImage* __nullable image) {
 ASTCRawImage* __nullable ASTCImage::decompress(ASTCErrorInfo& error, void* __nullable userInfo, ASTCEncoderProgressCallback __nullable progressCallback) {
     // Prepare ASTC encoder config
     astcenc_config config;
-    auto profile = astcenc_profile::ASTCENC_PRF_LDR;
-    auto result = astcenc_config_init(profile,
-                                      static_cast<unsigned int>(_blockWidth),
-                                      static_cast<unsigned int>(_blockHeight),
-                                      static_cast<unsigned int>(_blockDepth),
+    auto result = astcenc_config_init(makeASTCEncoderProfile(_linear, _hdr, _ldrAlpha),
+                                      static_cast<unsigned int>(_blockSize.width),
+                                      static_cast<unsigned int>(_blockSize.height),
+                                      static_cast<unsigned int>(_blockSize.depth),
                                       ASTCENC_PRE_EXHAUSTIVE,
                                       ASTCENC_FLG_DECOMPRESS_ONLY,
                                       &config);
@@ -615,5 +649,5 @@ ASTCRawImage* __nullable ASTCImage::decompress(ASTCErrorInfo& error, void* __nul
 //        }
 //    }
     
-    return new ASTCRawImage(content, _width, _height, _originalNumComponents, _componentSize, _linear, _hdr);
+    return new ASTCRawImage(content, _width, _height, _originalNumComponents, _componentSize, _colorSpace, _linear, _hdr, _ldrAlpha);
 }
