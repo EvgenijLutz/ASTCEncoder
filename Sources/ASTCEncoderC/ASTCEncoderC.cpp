@@ -169,6 +169,9 @@ void ASTCRawImageRelease(ASTCRawImage* __nullable image) {
 
 template <typename SourceType, typename DestinationType>
 struct PixelInfo {
+    // Sanity check
+    static_assert(sizeof(SourceType) == sizeof(DestinationType), "Source and destination sizes should match");
+    
     union {
         SourceType sourceTypeValue;
         unsigned char bytes[sizeof(SourceType)];
@@ -176,8 +179,6 @@ struct PixelInfo {
     };
     
     void convertToDestinationType(bool littleEndian) {
-        // Sanity check
-        static_assert(sizeof(SourceType) == sizeof(DestinationType), "Source and destination sizes should match");
         
         // Swap bytes instead of manually bit shift to make the value little endian
         if (littleEndian == false) {

@@ -37,6 +37,9 @@ let package = Package(
             name: "ASTCEncoderC",
             dependencies: [
                 .target(name: "astcenc")
+            ],
+            cxxSettings: [
+                .enableWarning("all")
             ]
         ),
         .target(
