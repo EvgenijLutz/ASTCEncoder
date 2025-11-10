@@ -1,13 +1,11 @@
 //
-//  ASTCEncoderC.hpp
+//  ASTCImage.hpp
 //  ASTCEncoder
 //
-//  Created by Evgenij Lutz on 26.08.25.
+//  Created by Evgenij Lutz on 10.11.25.
 //
 
 #pragma once
-
-#if defined __cplusplus
 
 #include <swift/bridging>
 #include <atomic>
@@ -292,6 +290,3 @@ public:
 }
 SWIFT_UNCHECKED_SENDABLE
 SWIFT_SHARED_REFERENCE(ASTCImageRetain, ASTCImageRelease);
-
-
-#endif
