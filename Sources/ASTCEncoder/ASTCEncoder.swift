@@ -4,10 +4,6 @@
 import Foundation
 @_exported import ASTCEncoderC
 
-#if canImport(CoreGraphics)
-import CoreGraphics
-#endif
-
 
 public enum LibASTCError: Error {
     case other(_ message: String)
@@ -47,14 +43,14 @@ public extension ASTCCompressionQuality {
 
 
 public extension ASTCRawImage {
-    static func create(data: UnsafeMutablePointer<CChar>, width: Int, height: Int, numComponents: Int, componentSize: Int, integerComponents: Bool, littleEndian: Bool, colorSpace: ASTCRawImageColorSpace, linear: Bool, hdr: Bool, ldrAlpha: Bool) throws(LibASTCError) -> ASTCRawImage {
+    static func create(data: UnsafePointer<CChar>, width: Int, height: Int, depth: Int, numComponents: Int, componentSize: Int, integerComponents: Bool, littleEndian: Bool, linear: Bool, hdr: Bool, ldrAlpha: Bool) throws(LibASTCError) -> ASTCRawImage {
         var error = ASTCErrorInfo()
-        let image = ASTCRawImage.__createUnsafe(data, width: width, height: height,
+        let image = ASTCRawImage.__createUnsafe(data,
+                                                width: width, height: height, depth: depth,
                                                 numComponents: numComponents,
                                                 componentSize: componentSize,
                                                 integerComponents: integerComponents,
                                                 littleEndian: littleEndian,
-                                                colorSpace: colorSpace,
                                                 linear: linear,
                                                 hdr: hdr,
                                                 ldrAlpha: ldrAlpha,
@@ -133,88 +129,59 @@ public extension ASTCImage {
 
 #if canImport(CoreGraphics)
 
+import CoreGraphics
+
+
 public extension ASTCRawImage {
-    var cgImage: CGImage  {
-        get throws {
-            guard let dataProvider = CGDataProvider(data: data as CFData) else {
-                throw LibASTCError.other("No data provider :(")
-            }
-            
-            
-            // Retreive colour space
-            let colorSpaceName: CFString? = switch colorProfile {
-            case .unknown:
-                //CGColorSpace.extendedDisplayP3
-                CGColorSpace.displayP3
-                
-            case .deviceDependant:
-                CGColorSpace.genericRGBLinear
-                
-            case .sRGB:
-                linear ? CGColorSpace.linearSRGB : CGColorSpace.sRGB
-                
-            case .P3:
-                if linear {
-                    hdr ? CGColorSpace.extendedLinearDisplayP3 : CGColorSpace.linearDisplayP3
-                }
-                else {
-                    hdr ? CGColorSpace.extendedDisplayP3 : CGColorSpace.displayP3
-                }
-                
-                //if hdr {
-                //    linear ? CGColorSpace.extendedLinearDisplayP3 : CGColorSpace.extendedDisplayP3
-                //}
-                //else {
-                //    linear ? CGColorSpace.linearDisplayP3 : CGColorSpace.displayP3
-                //}
-                
-            default:
-                CGColorSpace.sRGB
-            }
-            guard let colorSpaceName, let colorSpace = CGColorSpace(name: colorSpaceName) else {
-                throw LibASTCError.other("No color space :(")
-            }
-            
-            
-            let componentMask: UInt32
-            let orderMask: UInt32
-            switch componentSize {
-            case 1:
-                componentMask = CGImageComponentInfo.integer.rawValue
-                orderMask = CGImageByteOrderInfo.orderDefault.rawValue
-                
-            case 2:
-                componentMask = CGImageComponentInfo.float.rawValue
-                orderMask = CGImageByteOrderInfo.order16Little.rawValue
-                
-            case 4:
-                componentMask = CGImageComponentInfo.float.rawValue
-                orderMask = CGImageByteOrderInfo.order32Little.rawValue
-                
-            default:
-                throw LibASTCError.other("Unsupported component size: \(componentSize)")
-            }
-            
-            
-            let image = CGImage(
-                width: width,
-                height: height,
-                bitsPerComponent: componentSize * 8,
-                bitsPerPixel: componentSize * 8 * 4,
-                bytesPerRow: width * componentSize * 4,
-                space: colorSpace,
-                bitmapInfo: .init(rawValue: CGImageAlphaInfo.last.rawValue | componentMask | orderMask),
-                provider: dataProvider,
-                decode: nil,
-                shouldInterpolate: true,
-                intent: .defaultIntent
-            )
-            guard let image else {
-                throw LibASTCError.other("Could not create CGImage")
-            }
-            
-            return image
+    func createCgImage(colorSpace: CGColorSpace? = nil) throws -> CGImage {
+        guard let dataProvider = CGDataProvider(data: data as CFData) else {
+            throw LibASTCError.other("No data provider :(")
         }
+        
+        
+        guard let colorSpace = colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB) else {
+            throw LibASTCError.other("Could not create color space")
+        }
+        
+        
+        let componentMask: UInt32
+        let orderMask: UInt32
+        switch componentSize {
+        case 1:
+            componentMask = CGImageComponentInfo.integer.rawValue
+            orderMask = CGImageByteOrderInfo.orderDefault.rawValue
+            
+        case 2:
+            componentMask = CGImageComponentInfo.float.rawValue
+            orderMask = CGImageByteOrderInfo.order16Little.rawValue
+            
+        case 4:
+            componentMask = CGImageComponentInfo.float.rawValue
+            orderMask = CGImageByteOrderInfo.order32Little.rawValue
+            
+        default:
+            throw LibASTCError.other("Unsupported component size: \(componentSize)")
+        }
+        
+        
+        let image = CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: componentSize * 8,
+            bitsPerPixel: componentSize * 8 * 4,
+            bytesPerRow: width * componentSize * 4,
+            space: colorSpace,
+            bitmapInfo: .init(rawValue: CGImageAlphaInfo.last.rawValue | componentMask | orderMask),
+            provider: dataProvider,
+            decode: nil,
+            shouldInterpolate: true,
+            intent: .defaultIntent
+        )
+        guard let image else {
+            throw LibASTCError.other("Could not create CGImage")
+        }
+        
+        return image
     }
 }
 

@@ -7,8 +7,7 @@
 
 #pragma once
 
-#include <swift/bridging>
-#include <atomic>
+#include <ASTCEncoderC/Common.hpp>
 #include <string_view>
 
 
@@ -33,8 +32,8 @@ public:
     ASTCErrorInfo& operator = (const ASTCErrorInfo& other);
     ASTCErrorInfo& operator = (ASTCErrorInfo&& other);
     
-    const char* __nullable getErrorMessage() const SWIFT_COMPUTED_PROPERTY;
-    void setErrorMessage(const char* __nullable errorMessage) SWIFT_COMPUTED_PROPERTY;
+    const char* fn_nullable getErrorMessage() const SWIFT_COMPUTED_PROPERTY;
+    void setErrorMessage(const char* fn_nullable errorMessage) SWIFT_COMPUTED_PROPERTY;
 };
 
 
@@ -95,20 +94,7 @@ struct ASTCBlockSize {
 /// Specify a callback in the ``ASTCRawImage/compress-method`` method to track compression progress.
 ///
 /// - Returns: `true` if encoder should stop encoding, otherwise `false`.
-typedef bool (* ASTCEncoderProgressCallback)(void* __nullable userInfo, float progress);
-
-
-/// Color space of pixel components.
-enum class ASTCRawImageColorSpace: long {
-    /// Color space is unknown, the color space is assumed to be linear SDR (standard dynamic range - color values are in range `[0; 1]`).
-    unknown = 0,
-    /// Pixel colors are not tighed to a specific color space. Instead they depend on screen's color space the image will be rendered on. The color profile is assumed to be linear SDR.
-    deviceDependant = 1,
-    /// sRGB color space. The color profile can be linear SDR or gamma corrected SDR.
-    sRGB = 2,
-    /// DCI-P3 color space. The color profile can be linear SDR, gamma corrected SDR or linear HDR (high dynamic range - color values are in range `[0; +∞]`).
-    P3 = 3
-};
+typedef bool (* ASTCEncoderProgressCallback)(void* fn_nullable userInfo, float progress);
 
 
 // MARK: - ASTCRawImage
@@ -131,16 +117,12 @@ class ASTCRawImage {
 private:
     std::atomic<size_t> _referenceCounter;
     
-    /*const*/ char* __nonnull _contents;
+    /*const*/ char* fn_nonnull _contents;
     const long _width;
     const long _height;
-    //const long _depth;
+    const long _depth;
     const long _originalNumComponents;
     const long _componentSize;
-    /// Color profile.
-    ///
-    /// See ``ASTCRawImageColorSpace`` options for more information about what combinations of `_linear` and `_hdr` settings are possible.
-    const ASTCRawImageColorSpace _colorSpace;
     /// Linear or gamma-compressed. If the value is set to `false`, then the `_hdr` value is ignored and assumed to be `false`.
     const bool _linear;
     /// High dynamic range support. The `_linear` property has to be true.
@@ -148,13 +130,11 @@ private:
     const bool _ldrAlpha;
     
     
-    friend ASTCRawImage* __nullable ASTCRawImageRetain(ASTCRawImage* __nullable image) SWIFT_RETURNS_UNRETAINED;
-    friend void ASTCRawImageRelease(ASTCRawImage* __nullable image);
-    
     friend class ASTCImage;
+    FN_FRIEND_SWIFT_INTERFACE(ASTCRawImage)
     
     
-    ASTCRawImage(char* __nonnull contents, long width, long height, long originalNumComponents, long componentSize, ASTCRawImageColorSpace colorProfile, bool linear, bool hdr, bool ldrAlpha);
+    ASTCRawImage(char* fn_nonnull contents, long width, long height, long depth, long originalNumComponents, long componentSize, bool linear, bool hdr, bool ldrAlpha);
     ~ASTCRawImage();
     
 public:
@@ -169,14 +149,13 @@ public:
     /// - Parameter componentSize: pixel component size in **bytes**. The valid values are `1`, `2` or `4`.
     /// - Parameter integerComponents: wheter the input components are integers. If `true`, then it's unsigned integer that maps between `0` and `1` (max value depending on the `componentSize`). For floating point components, the `componentSize` should be at least two bytes, otherwise the parameter is ignored and assumed to be `true`.
     /// - Parameter littleEndian: whether the components are in little endian or big endian order. For instance, `png`'s contents are usually represented in big endian order.
-    /// - Parameter colorSpace: color space.
     /// - Parameter linear: whether the components are in `linear` or `gamma-compressed` colour profile.
     /// - Parameter hdr: whether the components represent extended dynamic range. I that case, components in the `contents` input are expected to be floating point values (i.e. the `integerComponents` parameter should be `false`), `componentSize` should be either `2` (16-bit float) or `4` (32-bit float) and the `linear` parameter should be `true`, otherwise this parameter is ignored and assumed to be `false`.
     /// - Parameter ldrAlpha: whether the last channel is used as LDR alpha channel when `hdr` setting is `true` and `numComponents` is set to `4`. This options helps ASTC encoder how to interpret the data.
     /// - Parameter error: error description container is something goes wrong.
     ///
     /// - Returns: an instance of ``ASTCRawImage`` if all input data is valid. Otherwise `null` is returned and `error` will contain verbose information what went wrong.
-    static ASTCRawImage* __nullable create(char* __nonnull contents, long width, long height, long numComponents, long componentSize, bool integerComponents, bool littleEndian, ASTCRawImageColorSpace colorSpace, bool linear, bool hdr, bool ldrAlpha, ASTCErrorInfo& error) SWIFT_NAME(__createUnsafe(_:width:height:numComponents:componentSize:integerComponents:littleEndian:colorSpace:linear:hdr:ldrAlpha:error:)) SWIFT_RETURNS_RETAINED;
+    static ASTCRawImage* fn_nullable create(const char* fn_nonnull contents fn_noescape, long width, long height, long depth, long numComponents, long componentSize, bool integerComponents, bool littleEndian, bool linear, bool hdr, bool ldrAlpha, ASTCErrorInfo& error) SWIFT_NAME(__createUnsafe(_:width:height:depth:numComponents:componentSize:integerComponents:littleEndian:linear:hdr:ldrAlpha:error:)) SWIFT_RETURNS_RETAINED;
     
     
     /// Compresses image contents using specified block size and compression quality into an ``ASTCImage``.
@@ -184,14 +163,14 @@ public:
     /// - Returns: an instance of ``ASTCImage`` if all input data is valid. Otherwise `null` is returned and `error` will contain verbose information what went wrong.
     ///
     /// - Warning: This method is computationally intensive. Delegate its work to a concurrent thread or task to make sure that your working thread is not blocked. When delegating to a concurrent thread, don't forget to retain this object using the ``ASTCRawImageRetain`` function before passing to other context and ``ASTCRawImageRelease`` after finishing work on a concurrent thread to acheive proper retain/release cycles and make sure that the object does not get prematurely destroyed.
-    ASTCImage* __nullable compress(ASTCBlockSize blockSize, float quality, ASTCErrorInfo& error, void* __nullable userInfo, ASTCEncoderProgressCallback __nullable progressCallback) SWIFT_NAME(__compressUnsafe(blockSize:quality:error:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
+    ASTCImage* fn_nullable compress(ASTCBlockSize blockSize, float quality, ASTCErrorInfo& error, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) SWIFT_NAME(__compressUnsafe(blockSize:quality:error:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
     
     
     // TODO: Migrate to @lifebound Spans by returning std::span when this Swift feature will be available
     /// Returns image contents.
-    const char* __nonnull getContents() SWIFT_RETURNS_INDEPENDENT_VALUE SWIFT_COMPUTED_PROPERTY { return _contents; }
+    const char* fn_nonnull getContents() fn_lifetimebound SWIFT_COMPUTED_PROPERTY { return _contents; }
     /// Returns image contents size.
-    long getContentsSize() SWIFT_COMPUTED_PROPERTY { return _width * _height * 4 * _componentSize; }
+    long getContentsSize() SWIFT_COMPUTED_PROPERTY { return _width * _height * _depth * 4 * _componentSize; }
     
     
     /// Width of the image.
@@ -200,6 +179,10 @@ public:
     
     /// Height of the image.
     long getHeight() SWIFT_COMPUTED_PROPERTY { return _height; }
+    
+    
+    /// Depth of the image.
+    long getDepth() SWIFT_COMPUTED_PROPERTY { return _depth; }
     
     
     /// Original number of components, `0` if unknown.
@@ -217,14 +200,12 @@ public:
     /// Expected values are `1` (8 bit uint), `2` (16 bit float) and `4` (32 bit float).
     long getComponentSize() SWIFT_COMPUTED_PROPERTY { return _componentSize; }
     
-    /// Color profile.
-    ASTCRawImageColorSpace getColorProfile() SWIFT_COMPUTED_PROPERTY { return _colorSpace; }
     bool getLinear() SWIFT_COMPUTED_PROPERTY { return _linear; }
     bool getHDR() SWIFT_COMPUTED_PROPERTY { return _hdr; }
 }
-SWIFT_UNCHECKED_SENDABLE
 SWIFT_PRIVATE_FILEID("ASTCEncoder/ASTCEncoder.swift")
-SWIFT_SHARED_REFERENCE(ASTCRawImageRetain, ASTCRawImageRelease);
+FN_SWIFT_INTERFACE(ASTCRawImage)
+SWIFT_UNCHECKED_SENDABLE;
 
 
 // MARK: - ASTCImage
@@ -238,13 +219,12 @@ class ASTCImage {
 private:
     std::atomic<size_t> _referenceCounter;
     
-    /*const*/ char* __nonnull _contents;
+    char* fn_nonnull _contents;
     const long _width;
     const long _height;
     const long _depth;
     const long _originalNumComponents;
     const long _componentSize;
-    const ASTCRawImageColorSpace _colorSpace;
     const bool _linear;
     const bool _hdr;
     const bool _ldrAlpha;
@@ -255,22 +235,20 @@ private:
     const ASTCBlockSize _blockSize;
     
     
-    friend ASTCImage* __nullable ASTCImageRetain(ASTCImage* __nullable image) SWIFT_RETURNS_UNRETAINED;
-    friend void ASTCImageRelease(ASTCImage* __nullable image);
-    
     friend class ASTCRawImage;
+    FN_FRIEND_SWIFT_INTERFACE(ASTCImage)
     
     
-    ASTCImage(char* __nonnull contents,
+    ASTCImage(char* fn_nonnull contents,
               long width, long height, long depth,
               long originalNumComponents, long componentSize,
-              ASTCRawImageColorSpace colorProfile, bool linear, bool hdr, bool ldrAlpha,
+              bool linear, bool hdr, bool ldrAlpha,
               long numBlocksWidth, long numBlocksHeight, long numBlocksDepth,
               ASTCBlockSize blockSize);
     ~ASTCImage();
     
 public:
-    ASTCRawImage* __nullable decompress(ASTCErrorInfo& error, void* __nullable userInfo, ASTCEncoderProgressCallback __nullable progressCallback) SWIFT_NAME(__decompressUnsafe(error:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
+    ASTCRawImage* fn_nullable decompress(ASTCErrorInfo& error, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) SWIFT_NAME(__decompressUnsafe(error:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
     
     /// Number of components of decompressed image.
     ///
@@ -286,7 +264,11 @@ public:
     /// Expected values are `1` (8 bit uint), `2` (16 bit float) and `4` (32 bit float).
     long getComponentSize() SWIFT_COMPUTED_PROPERTY { return _componentSize; }
     
-    const char* __nonnull getContents() SWIFT_RETURNS_INDEPENDENT_VALUE SWIFT_COMPUTED_PROPERTY { return _contents; }
+    const char* fn_nonnull getContents() fn_lifetimebound SWIFT_COMPUTED_PROPERTY { return _contents; }
 }
-SWIFT_UNCHECKED_SENDABLE
-SWIFT_SHARED_REFERENCE(ASTCImageRetain, ASTCImageRelease);
+FN_SWIFT_INTERFACE(ASTCImage)
+SWIFT_UNCHECKED_SENDABLE;
+
+
+FN_DEFINE_SWIFT_INTERFACE(ASTCRawImage)
+FN_DEFINE_SWIFT_INTERFACE(ASTCImage)
