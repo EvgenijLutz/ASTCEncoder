@@ -133,13 +133,15 @@ import CoreGraphics
 
 
 public extension ASTCRawImage {
-    func createCgImage(colorSpace: CGColorSpace? = nil) throws -> CGImage {
+    func createCgImage(colorSpace: CGColorSpace? = nil, assumeSRGB: Bool = true) throws -> CGImage {
         guard let dataProvider = CGDataProvider(data: data as CFData) else {
             throw LibASTCError.other("No data provider :(")
         }
         
         
-        guard let colorSpace = colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB) else {
+        let optionalName = assumeSRGB ? CGColorSpace.sRGB : CGColorSpace.genericRGBLinear
+        guard let colorSpace = colorSpace ?? CGColorSpace(name: optionalName) else {
+        //guard let colorSpace = colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB) else {
             throw LibASTCError.other("Could not create color space")
         }
         

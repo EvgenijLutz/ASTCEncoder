@@ -287,16 +287,16 @@ ASTCRawImage* fn_nullable ASTCRawImage::create(const char* fn_nonnull data fn_no
 
 
 static astcenc_profile makeASTCEncoderProfile(bool linear, bool hdr, bool ldrAlpha) {
-    if (linear) {
-        return astcenc_profile::ASTCENC_PRF_LDR;
-    }
-    
     if (hdr) {
         if (ldrAlpha) {
             return astcenc_profile::ASTCENC_PRF_HDR_RGB_LDR_A;
         }
         
         return astcenc_profile::ASTCENC_PRF_HDR;
+    }
+    
+    if (linear) {
+        return astcenc_profile::ASTCENC_PRF_LDR;
     }
     
     return astcenc_profile::ASTCENC_PRF_LDR_SRGB;
