@@ -5,12 +5,14 @@ import Foundation
 @_exported import ASTCEncoderC
 
 
+// TODO: Use ASTCErrorInfo that conforms to the Error protocol
 public enum LibASTCError: Error {
     case other(_ message: String)
     case unknown
 }
 
 
+@available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 public extension ASTCErrorInfo {
     var error: LibASTCError {
         if let message = errorMessage {
@@ -22,6 +24,7 @@ public extension ASTCErrorInfo {
 }
 
 
+@available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 extension ASTCBlockSize: @retroactive Hashable {
     public func hash(into hasher: inout Hasher) {
         hasher.combine(width)
@@ -42,8 +45,9 @@ public extension ASTCCompressionQuality {
 }
 
 
+@available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 public extension ASTCRawImage {
-    static func create(data: UnsafePointer<CChar>, width: Int, height: Int, depth: Int, numComponents: Int, componentSize: Int, integerComponents: Bool, littleEndian: Bool, linear: Bool, hdr: Bool, ldrAlpha: Bool) throws(LibASTCError) -> ASTCRawImage {
+    static func create(data: UnsafePointer<CChar>, width: Int, height: Int, depth: Int, numComponents: Int, componentSize: Int, integerComponents: Bool, littleEndian: Bool, linear: Bool, hdr: Bool, containsAlpha: Bool, ldrAlpha: Bool, normalMap: Bool) throws(LibASTCError) -> ASTCRawImage {
         var error = ASTCErrorInfo()
         let image = ASTCRawImage.__createUnsafe(data,
                                                 width: width, height: height, depth: depth,
@@ -53,7 +57,9 @@ public extension ASTCRawImage {
                                                 littleEndian: littleEndian,
                                                 linear: linear,
                                                 hdr: hdr,
+                                                containsAlpha: containsAlpha,
                                                 ldrAlpha: ldrAlpha,
+                                                normalMap: normalMap,
                                                 error: &error)
         
         guard let image else {
@@ -113,6 +119,7 @@ public extension ASTCRawImage {
 }
 
 
+@available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 public extension ASTCImage {
     func decompress() throws -> ASTCRawImage {
         var error = ASTCErrorInfo()
@@ -132,18 +139,30 @@ public extension ASTCImage {
 import CoreGraphics
 
 
+@available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 public extension ASTCRawImage {
-    func createCgImage(colorSpace: CGColorSpace? = nil, assumeSRGB: Bool = true) throws -> CGImage {
+    func createCgImage(colorSpace: CGColorSpace? = nil, assumeSRGB: Bool = true, hdr: Bool = false) throws -> CGImage {
         guard let dataProvider = CGDataProvider(data: data as CFData) else {
             throw LibASTCError.other("No data provider :(")
         }
         
         
-        let optionalName = assumeSRGB ? CGColorSpace.sRGB : CGColorSpace.genericRGBLinear
-        guard let colorSpace = colorSpace ?? CGColorSpace(name: optionalName) else {
-        //guard let colorSpace = colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB) else {
-            throw LibASTCError.other("Could not create color space")
-        }
+        let colorSpace: CGColorSpace = try {
+            let optionalName = assumeSRGB ? CGColorSpace.sRGB : CGColorSpace.genericRGBLinear
+            guard let colorSpace = colorSpace ?? CGColorSpace(name: optionalName) else {
+                //guard let colorSpace = colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB) else {
+                throw LibASTCError.other("Could not create color space")
+            }
+            
+            if hdr {
+                guard let hdrColorSpace = CGColorSpaceCreateExtended(colorSpace) else {
+                    throw LibASTCError.other("Could not create HDR color space")
+                }
+                return hdrColorSpace
+            }
+            
+            return colorSpace
+        }()
         
         
         let componentMask: UInt32
@@ -165,6 +184,14 @@ public extension ASTCRawImage {
             throw LibASTCError.other("Unsupported component size: \(componentSize)")
         }
         
+        let alphaMask: UInt32
+        if _containsAlpha {
+            alphaMask = CGImageAlphaInfo.last.rawValue
+        }
+        else {
+            alphaMask = CGImageAlphaInfo.noneSkipLast.rawValue
+        }
+        
         
         let image = CGImage(
             width: width,
@@ -173,7 +200,7 @@ public extension ASTCRawImage {
             bitsPerPixel: componentSize * 8 * 4,
             bytesPerRow: width * componentSize * 4,
             space: colorSpace,
-            bitmapInfo: .init(rawValue: CGImageAlphaInfo.last.rawValue | componentMask | orderMask),
+            bitmapInfo: .init(rawValue: alphaMask | componentMask | orderMask),
             provider: dataProvider,
             decode: nil,
             shouldInterpolate: true,

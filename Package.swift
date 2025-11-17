@@ -8,10 +8,10 @@ let package = Package(
     // See the "Minimum Deployment Version for Reference Types Imported from C++":
     // https://www.swift.org/documentation/cxx-interop/status/
     platforms: [
-        .macOS(.v14),
-        .iOS(.v17),
-        .tvOS(.v17),
-        .watchOS(.v10),
+        .macOS(.v10_13),
+        .iOS(.v12),
+        .tvOS(.v12),
+        .watchOS(.v8),
         .visionOS(.v1)
     ],
     products: [
@@ -52,7 +52,7 @@ let package = Package(
             ]
         ),
     ],
-    // The lcms2 library was compiled using c17, so set it also here
+    // The astcenc library was compiled using c17, so set it also here
     cLanguageStandard: .c17,
     // Also use c++20, we don't live in the stone age, but still not ready to accept c++23
     cxxLanguageStandard: .cxx20

@@ -134,7 +134,7 @@ bool ASTCBlockSize::operator == (const ASTCBlockSize& other) const {
 
 // MARK: - ASTCRawImage
 
-ASTCRawImage::ASTCRawImage(char* fn_nonnull contents, long width, long height, long depth, long originalNumComponents, long componentSize, bool linear, bool hdr, bool ldrAlpha):
+ASTCRawImage::ASTCRawImage(char* fn_nonnull contents, long width, long height, long depth, long originalNumComponents, long componentSize, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap):
 _referenceCounter(1),
 _contents(contents),
 _width(width),
@@ -144,7 +144,9 @@ _originalNumComponents(originalNumComponents),
 _componentSize(componentSize),
 _linear(linear),
 _hdr(hdr),
-_ldrAlpha(ldrAlpha) {
+_containsAlpha(containsAlpha),
+_ldrAlpha(ldrAlpha),
+_normalMap(normalMap) {
     // Done
 }
 
@@ -189,7 +191,7 @@ struct PixelInfo {
 };
 
 
-ASTCRawImage* fn_nullable ASTCRawImage::create(const char* fn_nonnull data fn_noescape, long width, long height, long depth, long numComponents, long componentSize, bool integerComponents, bool littleEndian, bool linear, bool hdr, bool ldrAlpha, ASTCErrorInfo& error) SWIFT_RETURNS_RETAINED {
+ASTCRawImage* fn_nullable ASTCRawImage::create(const char* fn_nonnull data fn_noescape, long width, long height, long depth, long numComponents, long componentSize, bool integerComponents, bool littleEndian, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normal, ASTCErrorInfo& error) SWIFT_RETURNS_RETAINED {
     // Validate input data
     if (data == nullptr) {
         error.setErrorMessage("Image data not specified");
@@ -236,6 +238,17 @@ ASTCRawImage* fn_nullable ASTCRawImage::create(const char* fn_nonnull data fn_no
         hdr = false;
     }
     
+    // Check if there is really alpha channel, correct otherwise
+    if (containsAlpha && componentSize != 2 && componentSize != 4) {
+        containsAlpha = false;
+    }
+    
+    
+    if (normal == true && numComponents < 2) {
+        printf("Normal texture should have at least two components. The flag is ignored and the image is treated as a greyscale texture.\n");
+        normal = false;
+    }
+    
     
     // Create image data
     auto imageDataSize = width * height * componentSize * 4;
@@ -280,9 +293,9 @@ ASTCRawImage* fn_nullable ASTCRawImage::create(const char* fn_nonnull data fn_no
     // Success
     return new ASTCRawImage(dataCopy,
                             width, height, depth,
-                            numComponents, componentSize,
+                            normal ? 2 : numComponents, componentSize,
                             linear,
-                            hdr, ldrAlpha);
+                            hdr, containsAlpha, ldrAlpha, normal);
 }
 
 
@@ -309,9 +322,21 @@ ASTCImage* fn_nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qua
     long blockWidth = blockSize.width;
     long blockHeight = blockSize.height;
     long blockDepth = blockSize.depth;
+    
     unsigned int flags = 0;
+    // Normal map
+    if (_normalMap) {
+        flags |= ASTCENC_FLG_MAP_NORMAL;
+    }
+    else {
+        // Alpha weight for more accurate enconding in opaque areas
+        if (_containsAlpha && (_originalNumComponents == 2 || _originalNumComponents == 4)) {
+            flags |= ASTCENC_FLG_USE_ALPHA_WEIGHT;
+        }
+    }
     //ASTCENC_FLG_USE_ALPHA_WEIGHT
     //ASTCENC_FLG_USE_DECODE_UNORM8
+    
     auto result = astcenc_config_init(makeASTCEncoderProfile(_linear, _hdr, _ldrAlpha),
                                       static_cast<unsigned int>(blockWidth),
                                       static_cast<unsigned int>(blockHeight),
@@ -455,13 +480,13 @@ ASTCImage* fn_nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qua
     astcenc_context_free(context);
     callbackContext.reset();
     
-    return new ASTCImage(astcData, _width, _height, _depth, _originalNumComponents, _componentSize, _linear, _hdr, _ldrAlpha, astcXCount, astcYCount, astcZCount, blockSize);
+    return new ASTCImage(astcData, _width, _height, _depth, _originalNumComponents, _componentSize, _linear, _hdr, _containsAlpha, _ldrAlpha, _normalMap, astcXCount, astcYCount, astcZCount, blockSize);
 }
 
 
 // MARK: - ASTCImage
 
-ASTCImage::ASTCImage(char* fn_nonnull contents, long width, long height, long depth, long originalNumComponents, long componentSize, bool linear, bool hdr, bool ldrAlpha, long numBlocksWidth, long numBlocksHeight, long numBlocksDepth, ASTCBlockSize blockSize):
+ASTCImage::ASTCImage(char* fn_nonnull contents, long width, long height, long depth, long originalNumComponents, long componentSize, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap, long numBlocksWidth, long numBlocksHeight, long numBlocksDepth, ASTCBlockSize blockSize):
 _referenceCounter(1),
 _contents(contents),
 _width(width),
@@ -471,7 +496,9 @@ _originalNumComponents(originalNumComponents),
 _componentSize(componentSize),
 _linear(linear),
 _hdr(hdr),
+_containsAlpha(containsAlpha),
 _ldrAlpha(ldrAlpha),
+_normalMap(normalMap),
 _numBlocksWidth(numBlocksWidth),
 _numBlocksHeight(numBlocksHeight),
 _numBlocksDepth(numBlocksDepth),
@@ -626,7 +653,7 @@ ASTCRawImage* fn_nullable ASTCImage::decompress(ASTCErrorInfo& error, void* fn_n
 //        }
 //    }
     
-    return new ASTCRawImage(content, _width, _height, _depth, _originalNumComponents, _componentSize, _linear, _hdr, _ldrAlpha);
+    return new ASTCRawImage(content, _width, _height, _depth, _originalNumComponents, _componentSize, _linear, _hdr, _containsAlpha, _ldrAlpha, _normalMap);
 }
 
 
