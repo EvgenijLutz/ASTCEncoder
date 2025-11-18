@@ -2,24 +2,55 @@
 // https://docs.swift.org/swift-book
 
 import Foundation
+import astcenc
 @_exported import ASTCEncoderC
 
 
-// TODO: Use ASTCErrorInfo that conforms to the Error protocol
-public enum LibASTCError: Error {
-    case other(_ message: String)
-    case unknown
+public typealias ASTCEncoderCallback = (_ progress: Float) -> Void
+
+fileprivate struct CallbackContext {
+    var progressCallback: ASTCEncoderCallback
+}
+
+@available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
+@_cdecl("astcEncoderCCallback")
+fileprivate func astcEncoderCCallback(_ userInfo: UnsafeMutableRawPointer?, _ progress: Float) -> Bool {
+    userInfo?.withMemoryRebound(to: CallbackContext.self, capacity: 1) { pointer in
+        pointer.pointee.progressCallback(progress)
+    }
+    
+    return Task.isCancelled
+}
+
+fileprivate func withASTCEncoderCallback<T>(_ callback: ASTCEncoderCallback, action: (_ userInfo: UnsafeMutableRawPointer?) throws -> T) rethrows -> T {
+    return try withoutActuallyEscaping(callback) { escapingClosure in
+        var callbackContext = CallbackContext(progressCallback: escapingClosure)
+        return try withUnsafeMutablePointer(to: &callbackContext) { pointer in
+            try action(pointer)
+        }
+    }
 }
 
 
 @available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
-public extension ASTCErrorInfo {
-    var error: LibASTCError {
-        if let message = errorMessage {
-            return .other(String(cString: message))
+extension ASTCError: @retroactive Error, @retroactive CustomStringConvertible {
+    init(_ message: String) {
+        self.init()
+        message.withCString { pointer in
+            setErrorMessage(pointer)
+        }
+    }
+    
+    var message: String {
+        guard let errorMessage else {
+            return ""
         }
         
-        return .unknown
+        return String(cString: errorMessage)
+    }
+    
+    public var description: String {
+        message
     }
 }
 
@@ -36,19 +67,19 @@ extension ASTCBlockSize: @retroactive Hashable {
 
 public typealias ASTCCompressionQuality = Float
 public extension ASTCCompressionQuality {
-    static let fastest: ASTCCompressionQuality = 0
-    static let fast: ASTCCompressionQuality = 10
-    static let medium: ASTCCompressionQuality = 60
-    static let thorough: ASTCCompressionQuality = 98
-    static let veryThorough: ASTCCompressionQuality = 99
-    static let exhaustive: ASTCCompressionQuality = 100
+    static let fastest: ASTCCompressionQuality = ASTCENC_PRE_FASTEST
+    static let fast: ASTCCompressionQuality = ASTCENC_PRE_FAST
+    static let medium: ASTCCompressionQuality = ASTCENC_PRE_MEDIUM
+    static let thorough: ASTCCompressionQuality = ASTCENC_PRE_THOROUGH
+    static let veryThorough: ASTCCompressionQuality = ASTCENC_PRE_VERYTHOROUGH
+    static let exhaustive: ASTCCompressionQuality = ASTCENC_PRE_EXHAUSTIVE
 }
 
 
 @available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 public extension ASTCRawImage {
-    static func create(data: UnsafePointer<CChar>, width: Int, height: Int, depth: Int, numComponents: Int, componentSize: Int, integerComponents: Bool, littleEndian: Bool, linear: Bool, hdr: Bool, containsAlpha: Bool, ldrAlpha: Bool, normalMap: Bool) throws(LibASTCError) -> ASTCRawImage {
-        var error = ASTCErrorInfo()
+    static func create(data: UnsafePointer<CChar>, width: Int, height: Int, depth: Int, numComponents: Int, componentSize: Int, integerComponents: Bool, littleEndian: Bool, linear: Bool, hdr: Bool, containsAlpha: Bool, ldrAlpha: Bool, normalMap: Bool) throws(ASTCError) -> ASTCRawImage {
+        var error = ASTCError()
         let image = ASTCRawImage.__createUnsafe(data,
                                                 width: width, height: height, depth: depth,
                                                 numComponents: numComponents,
@@ -63,7 +94,7 @@ public extension ASTCRawImage {
                                                 error: &error)
         
         guard let image else {
-            throw error.error
+            throw error
         }
         
         return image
@@ -71,31 +102,19 @@ public extension ASTCRawImage {
     
     
     func compress(blockSize: ASTCBlockSize, quality: ASTCCompressionQuality, _ progressCallback: @Sendable (_ progress: Float) -> Void = { _ in }) throws -> ASTCImage {
-        return try withoutActuallyEscaping(progressCallback) { escapingClosure in
-            struct CallbackContext: Sendable {
-                var progressCallback: @Sendable (Float) -> Void
-            }
-            var callbackContext = CallbackContext(progressCallback: escapingClosure)
+        return try withASTCEncoderCallback(progressCallback) { userInfo in
+            var error = ASTCError()
+            let image = __compressUnsafe(blockSize: blockSize,
+                                         quality: quality,
+                                         error: &error,
+                                         userInfo: userInfo,
+                                         progressCallback: astcEncoderCCallback)
             
-            return try withUnsafeMutablePointer(to: &callbackContext) { pointer in
-                var error = ASTCErrorInfo()
-                let image = __compressUnsafe(blockSize: blockSize,
-                                             quality: quality,
-                                             error: &error,
-                                             userInfo: pointer) { userInfo, progress in
-                    userInfo?.withMemoryRebound(to: CallbackContext.self, capacity: 1) { pointer in
-                        pointer.pointee.progressCallback(progress)
-                    }
-                    
-                    return Task.isCancelled
-                }
-                
-                guard let image else {
-                    throw error.error
-                }
-                
-                return image
+            guard let image else {
+                throw error
             }
+            
+            return image
         }
     }
     
@@ -121,15 +140,19 @@ public extension ASTCRawImage {
 
 @available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 public extension ASTCImage {
-    func decompress() throws -> ASTCRawImage {
-        var error = ASTCErrorInfo()
-        let rawImage = __decompressUnsafe(error: &error, userInfo: nil, progressCallback: nil)
-        
-        guard let rawImage else {
-            throw error.error
+    func decompress(_ progressCallback: @Sendable (_ progress: Float) -> Void = { _ in }) throws -> ASTCRawImage {
+        return try withASTCEncoderCallback(progressCallback) { userInfo in
+            var error = ASTCError()
+            let rawImage = __decompressUnsafe(error: &error,
+                                              userInfo: userInfo,
+                                              progressCallback: astcEncoderCCallback)
+            
+            guard let rawImage else {
+                throw error
+            }
+            
+            return rawImage
         }
-        
-        return rawImage
     }
 }
 
@@ -143,7 +166,7 @@ import CoreGraphics
 public extension ASTCRawImage {
     func createCgImage(colorSpace: CGColorSpace? = nil, assumeSRGB: Bool = true, hdr: Bool = false) throws -> CGImage {
         guard let dataProvider = CGDataProvider(data: data as CFData) else {
-            throw LibASTCError.other("No data provider :(")
+            throw ASTCError("No data provider :(")
         }
         
         
@@ -151,12 +174,12 @@ public extension ASTCRawImage {
             let optionalName = assumeSRGB ? CGColorSpace.sRGB : CGColorSpace.genericRGBLinear
             guard let colorSpace = colorSpace ?? CGColorSpace(name: optionalName) else {
                 //guard let colorSpace = colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB) else {
-                throw LibASTCError.other("Could not create color space")
+                throw ASTCError("Could not create color space")
             }
             
             if hdr {
                 guard let hdrColorSpace = CGColorSpaceCreateExtended(colorSpace) else {
-                    throw LibASTCError.other("Could not create HDR color space")
+                    throw ASTCError("Could not create HDR color space")
                 }
                 return hdrColorSpace
             }
@@ -181,7 +204,7 @@ public extension ASTCRawImage {
             orderMask = CGImageByteOrderInfo.order32Little.rawValue
             
         default:
-            throw LibASTCError.other("Unsupported component size: \(componentSize)")
+            throw ASTCError("Unsupported component size: \(componentSize)")
         }
         
         let alphaMask: UInt32
@@ -207,7 +230,7 @@ public extension ASTCRawImage {
             intent: .defaultIntent
         )
         guard let image else {
-            throw LibASTCError.other("Could not create CGImage")
+            throw ASTCError("Could not create CGImage")
         }
         
         return image

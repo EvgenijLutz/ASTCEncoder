@@ -9,7 +9,7 @@
 
 #if defined __cplusplus
 
+#include <ASTCEncoderC/Common.hpp>
 #include <ASTCEncoderC/ASTCImage.hpp>
-
 
 #endif

@@ -18,23 +18,24 @@ class ASTCRawImage;
 class ASTCImage;
 
 
-// TODO: Rename to ASTCError
 /// Error description.
-struct ASTCErrorInfo final {
+struct ASTCError final {
 private:
     char _errorMessage[ASTC_ENCODER_ERROR_SIZE];
     
 public:
-    ASTCErrorInfo();
-    ASTCErrorInfo(const ASTCErrorInfo& other);
-    ASTCErrorInfo(ASTCErrorInfo&& other);
-    ~ASTCErrorInfo();
+    ASTCError();
+    ASTCError(const char* fn_nonnull message fn_noescape);
+    ASTCError(const ASTCError& other);
+    ASTCError(ASTCError&& other);
+    ~ASTCError();
     
-    ASTCErrorInfo& operator = (const ASTCErrorInfo& other);
-    ASTCErrorInfo& operator = (ASTCErrorInfo&& other);
+    ASTCError& operator = (const ASTCError& other);
+    ASTCError& operator = (ASTCError&& other);
     
+    std::span<const char> getMessageSpan() const fn_lifetimebound SWIFT_COMPUTED_PROPERTY;
     const char* fn_nullable getErrorMessage() const fn_lifetimebound SWIFT_COMPUTED_PROPERTY;
-    void setErrorMessage(const char* fn_nullable errorMessage) SWIFT_COMPUTED_PROPERTY;
+    void setErrorMessage(const char* fn_nullable errorMessage fn_noescape) SWIFT_COMPUTED_PROPERTY;
 };
 
 
@@ -150,27 +151,34 @@ public:
     /// - Parameter contents: image contens to copy in `R`, `RG`, `RGB` or `RGBA` pixel format.
     /// - Parameter width: width, surprise.
     /// - Parameter height: height.
+    /// - Parameter depth: depth.
     /// - Parameter numComponents: number of components. The valid values are `1` (`R` - grey), `2` (`RG` - grey with alpha channel), `3` (`RGB` - red, green and blue channels) or `4` (`RGBA` - red, green, blue and alpha channels).
     /// - Parameter componentSize: pixel component size in **bytes**. The valid values are `1`, `2` or `4`.
     /// - Parameter integerComponents: wheter the input components are integers. If `true`, then it's unsigned integer that maps between `0` and `1` (max value depending on the `componentSize`). For floating point components, the `componentSize` should be at least two bytes, otherwise the parameter is ignored and assumed to be `true`.
     /// - Parameter littleEndian: whether the components are in little endian or big endian order. For instance, `png`'s contents are usually represented in big endian order.
-    /// - Parameter linear: whether the components are in `linear` or `gamma-compressed` colour profile.
+    /// - Parameter linear: whether the colour components have `linear` or `sRGB` colour transfer function.
     /// - Parameter hdr: whether the components represent extended dynamic range. I that case, components in the `contents` input are expected to be floating point values (i.e. the `integerComponents` parameter should be `false`), `componentSize` should be either `2` (16-bit float) or `4` (32-bit float) and the `linear` parameter should be `true`, otherwise this parameter is ignored and assumed to be `false`.
     /// - Parameter containsAlpha: Image contains alpha channel. Allows more accurate enconding in opaque areas. Only valid if number of components is either `2` or `4`, otherwise this parameter is ignored.
-    /// - Parameter ldrAlpha: whether the last channel is used as LDR alpha channel when `hdr` setting is `true` and `numComponents` is set to `4`. This options helps ASTC encoder how to interpret the data.
-    /// - Parameter normal: Indicates that it's a normal map. This property is only valid if `_originalNumComponents` greater than or equals to `2` (`r` and `g` components will be used for encoding), `_linear`=`true` and `_hdr`=`false`, `_ldrAlpha` is ignored. The compresseor generates an RRRG ASTC image, the shader reads `x` and `y` components, the `z` component is reconstructed in the shader.
+    /// - Parameter ldrAlpha: whether the last channel of hdr texture is used as LDR alpha channel. This oprion is valid when `numComponents` is set to `4`, `hdr` setting is `true` and `containsAlpha` is `true`, otherwise this setting is ignored. This option tells ASTC encoder to prioritize quality for opaque regions.
+    /// - Parameter normalMap: Indicates that it's a normal map. This property is only valid if `numComponents` is greater than or equals to `2` (`r` and `g` components will be used for encoding), `linear`=`true` and `hdr`=`false` and `containsAlpha`=`false`. The compresseor generates an RRRG ASTC image, the shader reads `x` and `y` components, the `z` component is reconstructed in the shader.
     /// - Parameter error: error description container is something goes wrong.
     ///
     /// - Returns: an instance of ``ASTCRawImage`` if all input data is valid. Otherwise `null` is returned and `error` will contain verbose information what went wrong.
-    static ASTCRawImage* fn_nullable create(const char* fn_nonnull contents fn_noescape, long width, long height, long depth, long numComponents, long componentSize, bool integerComponents, bool littleEndian, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap, ASTCErrorInfo& error) SWIFT_NAME(__createUnsafe(_:width:height:depth:numComponents:componentSize:integerComponents:littleEndian:linear:hdr:containsAlpha:ldrAlpha:normalMap:error:)) SWIFT_RETURNS_RETAINED;
+    static ASTCRawImage* fn_nullable create(const char* fn_nonnull contents fn_noescape, long width, long height, long depth, long numComponents, long componentSize, bool integerComponents, bool littleEndian, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap, ASTCError& error) SWIFT_NAME(__createUnsafe(_:width:height:depth:numComponents:componentSize:integerComponents:littleEndian:linear:hdr:containsAlpha:ldrAlpha:normalMap:error:)) SWIFT_RETURNS_RETAINED;
     
     
     /// Compresses image contents using specified block size and compression quality into an ``ASTCImage``.
     ///
-    /// - Returns: an instance of ``ASTCImage`` if all input data is valid. Otherwise `null` is returned and `error` will contain verbose information what went wrong.
+    /// - Parameter blockSize: compression block size.
+    /// - Parameter quality: compression quality in range from `0` (fastest, lowest quality) to `100` (slowest, highest quality).
+    /// - Parameter error: error information in case something goes wrong and no ``ASTCImage`` is returned.
+    /// - Parameter userInfo: compression block size.
+    /// - Parameter progressCallback: progress callback, accepts earlier passed `userInfo` and current progress in range from `0` (start) to `1` (finish).
+    ///
+    /// - Returns: an instance of ``ASTCImage`` on success. Otherwise `null` is returned and `error` will contain verbose information what went wrong.
     ///
     /// - Warning: This method is computationally intensive. Delegate its work to a concurrent thread or task to make sure that your working thread is not blocked. When delegating to a concurrent thread, don't forget to retain this object using the ``ASTCRawImageRetain`` function before passing to other context and ``ASTCRawImageRelease`` after finishing work on a concurrent thread to acheive proper retain/release cycles and make sure that the object does not get prematurely destroyed.
-    ASTCImage* fn_nullable compress(ASTCBlockSize blockSize, float quality, ASTCErrorInfo& error, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) SWIFT_NAME(__compressUnsafe(blockSize:quality:error:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
+    ASTCImage* fn_nullable compress(ASTCBlockSize blockSize, float quality, ASTCError& error, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) SWIFT_NAME(__compressUnsafe(blockSize:quality:error:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
     
     
     // TODO: Migrate to @lifebound Spans by returning std::span when this Swift feature will be available
@@ -257,7 +265,7 @@ private:
     ~ASTCImage();
     
 public:
-    ASTCRawImage* fn_nullable decompress(ASTCErrorInfo& error, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) SWIFT_NAME(__decompressUnsafe(error:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
+    ASTCRawImage* fn_nullable decompress(ASTCError& error, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) SWIFT_NAME(__decompressUnsafe(error:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
     
     long getWidth() SWIFT_COMPUTED_PROPERTY { return _width; }
     long getHeight() SWIFT_COMPUTED_PROPERTY { return _height; }

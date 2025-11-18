@@ -14,21 +14,6 @@
 #include <numeric>
 
 
-static void copyString(char* fn_nonnull dst, const char* fn_nullable src, long maxLen) {
-    if (src == nullptr) {
-        dst[0] = 0;
-        return;
-    }
-    
-    auto length = strnlen(src, maxLen);
-    if (length >= maxLen) {
-        length = maxLen - 1;
-    }
-    memcpy(dst, src, length);
-    dst[length] = 0;
-}
-
-
 struct ASTCCallbackContext {
     astcenc_context* fn_nullable context;
     void* fn_nullable userInfo = nullptr;
@@ -49,52 +34,65 @@ struct ASTCCallbackContext {
 thread_local ASTCCallbackContext callbackContext = ASTCCallbackContext();
 
 
-// MARK: - ASTCErrorInfo
+// MARK: - ASTCError
 
-ASTCErrorInfo::ASTCErrorInfo() {
-    copyString(_errorMessage, nullptr, ASTC_ENCODER_ERROR_SIZE);
+ASTCError::ASTCError() {
+    setErrorMessage(nullptr);
 }
 
-ASTCErrorInfo::ASTCErrorInfo(const ASTCErrorInfo& other) {
-    memcpy(_errorMessage, other._errorMessage, ASTC_ENCODER_ERROR_SIZE);
+ASTCError::ASTCError(const char* fn_nonnull message fn_noescape) {
+    setErrorMessage(message);
 }
 
-ASTCErrorInfo::ASTCErrorInfo(ASTCErrorInfo&& other) {
-    memcpy(_errorMessage, other._errorMessage, ASTC_ENCODER_ERROR_SIZE);
+ASTCError::ASTCError(const ASTCError& other) {
+    std::memcpy(_errorMessage, other._errorMessage, ASTC_ENCODER_ERROR_SIZE);
 }
 
-ASTCErrorInfo::~ASTCErrorInfo() {
+ASTCError::ASTCError(ASTCError&& other) {
+    std::memcpy(_errorMessage, other._errorMessage, ASTC_ENCODER_ERROR_SIZE);
+}
+
+ASTCError::~ASTCError() {
     // Done
 }
 
 
-ASTCErrorInfo& ASTCErrorInfo::operator = (const ASTCErrorInfo& other) {
+ASTCError& ASTCError::operator = (const ASTCError& other) {
     if (this == &other) {
         return *this;
     }
     
-    memcpy(_errorMessage, other._errorMessage, ASTC_ENCODER_ERROR_SIZE);
+    std::memcpy(_errorMessage, other._errorMessage, ASTC_ENCODER_ERROR_SIZE);
     
     return *this;
 }
 
 
-ASTCErrorInfo& ASTCErrorInfo::operator = (ASTCErrorInfo&& other) {
+ASTCError& ASTCError::operator = (ASTCError&& other) {
     if (this == &other) {
         return *this;
     }
     
-    memcpy(_errorMessage, other._errorMessage, ASTC_ENCODER_ERROR_SIZE);
+    std::memcpy(_errorMessage, other._errorMessage, ASTC_ENCODER_ERROR_SIZE);
     
     return *this;
 }
 
-const char* fn_nullable ASTCErrorInfo::getErrorMessage() const {
+std::span<const char> ASTCError::getMessageSpan() const fn_lifetimebound {
+    return std::span(_errorMessage, strnlen(_errorMessage, ASTC_ENCODER_ERROR_SIZE));
+}
+
+const char* fn_nullable ASTCError::getErrorMessage() const {
     return _errorMessage;
 }
 
-void ASTCErrorInfo::setErrorMessage(const char* fn_nullable errorMessage) {
-    memcpy(_errorMessage, errorMessage, ASTC_ENCODER_ERROR_SIZE);
+void ASTCError::setErrorMessage(const char* fn_nullable errorMessage fn_noescape) {
+    if (errorMessage == nullptr) {
+        _errorMessage[0] = 0;
+        return;
+    }
+    
+    std::strncpy(_errorMessage, errorMessage, ASTC_ENCODER_ERROR_SIZE);
 }
 
 
@@ -167,7 +165,6 @@ struct PixelInfo {
     };
     
     void convertToDestinationType(bool littleEndian) {
-        
         // Swap bytes instead of manually bit shift to make the value little endian
         if (littleEndian == false) {
             constexpr auto numBytes = sizeof(SourceType);
@@ -191,7 +188,7 @@ struct PixelInfo {
 };
 
 
-ASTCRawImage* fn_nullable ASTCRawImage::create(const char* fn_nonnull data fn_noescape, long width, long height, long depth, long numComponents, long componentSize, bool integerComponents, bool littleEndian, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normal, ASTCErrorInfo& error) SWIFT_RETURNS_RETAINED {
+ASTCRawImage* fn_nullable ASTCRawImage::create(const char* fn_nonnull data fn_noescape, long width, long height, long depth, long numComponents, long componentSize, bool integerComponents, bool littleEndian, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap, ASTCError& error) SWIFT_RETURNS_RETAINED {
     // Validate input data
     if (data == nullptr) {
         error.setErrorMessage("Image data not specified");
@@ -225,28 +222,62 @@ ASTCRawImage* fn_nullable ASTCRawImage::create(const char* fn_nonnull data fn_no
     
     // Components are allowed to be floats only if componentSize takes at least two bytes.
     if (componentSize == 1) {
-        integerComponents = true;
-    }
-    
-    // HDR image can only contain floating point values
-    if (integerComponents) {
-        hdr = false;
+        if (integerComponents == false) {
+            printf("Floating point colour components should take at least 2 bytes. The integerComponents setting is ignored and assumed to be true.\n");
+            integerComponents = true;
+        }
     }
     
     // HDR image can be only in linear color space
-    if (linear == false) {
-        hdr = false;
+    if (hdr) {
+        if (componentSize < 2) {
+            printf("HDR image colour components should take at least 2 bytes. The hdr setting is ignored.\n");
+            hdr = false;
+        }
+        else if (integerComponents) {
+            printf("HDR image can only contain floating point components. The hdr setting is ignored.\n");
+            hdr = false;
+        }
+        else if (linear == false) {
+            printf("HDR image can be only in linear colour space. The hdr setting is ignored.\n");
+            hdr = false;
+        }
     }
     
     // Check if there is really alpha channel, correct otherwise
-    if (containsAlpha && componentSize != 2 && componentSize != 4) {
-        containsAlpha = false;
+    if (containsAlpha) {
+        if (componentSize != 2 && componentSize != 4) {
+            printf("Only textures with 2 or 4 pixel component may contain alpha channel. The containsAlpha setting is ignored.\n");
+            containsAlpha = false;
+        }
     }
     
+    // Check ldr alpha
+    if (ldrAlpha) {
+        /*if (numComponents != 4) {
+            printf("Only hdr textures with 4 colour components may contain LDR alpha. The ldrAlpha setting is ignored.\n");
+            ldrAlpha = false;
+        }
+        else*/ if (hdr == false) {
+            printf("The ldrAlpha setting is ignored because the texture is not HDR.\n");
+            ldrAlpha = false;
+        }
+    }
     
-    if (normal == true && numComponents < 2) {
-        printf("Normal texture should have at least two components. The flag is ignored and the image is treated as a greyscale texture.\n");
-        normal = false;
+    // Check normal map
+    if (normalMap == true) {
+        if (numComponents < 2) {
+            printf("Normal map should have at least two components. The normalMap setting is ignored and the image is treated as a greyscale texture.\n");
+            normalMap = false;
+        }
+        else if (hdr == true) {
+            printf("Normal map cannot have extended colour space. The normalMap setting is ignored and the image is treated as a regular hdr texture.\n");
+            normalMap = false;
+        }
+        else if (containsAlpha && numComponents < 4) {
+            printf("Normal map cannot contain alpha channel. The normalMap setting is ignored and the image is treated as a regular texture.\n");
+            normalMap = false;
+        }
     }
     
     
@@ -256,17 +287,17 @@ ASTCRawImage* fn_nullable ASTCRawImage::create(const char* fn_nonnull data fn_no
     
     // Copy the whole image contents if the original number of component matches
     if (numComponents == 4) {
-        memcpy(dataCopy, data, imageDataSize);
+        std::memcpy(dataCopy, data, imageDataSize);
     }
     else {
-        memset(dataCopy, 255, imageDataSize);
+        std::memset(dataCopy, 255, imageDataSize);
         auto pixelSize = numComponents * componentSize;
         auto targetPixelSize = 4 * componentSize;
         for (auto j = 0; j < height; j++) {
             for (auto i = 0; i < width; i++) {
-                memcpy(dataCopy + (i * targetPixelSize + j * width * targetPixelSize),
-                       data + (i * pixelSize + 0 + j * width * pixelSize),
-                       pixelSize);
+                std::memcpy(dataCopy + (i * targetPixelSize + j * width * targetPixelSize),
+                            data + (i * pixelSize + 0 + j * width * pixelSize),
+                            pixelSize);
             }
         }
     }
@@ -293,9 +324,9 @@ ASTCRawImage* fn_nullable ASTCRawImage::create(const char* fn_nonnull data fn_no
     // Success
     return new ASTCRawImage(dataCopy,
                             width, height, depth,
-                            normal ? 2 : numComponents, componentSize,
+                            normalMap ? 2 : numComponents, componentSize,
                             linear,
-                            hdr, containsAlpha, ldrAlpha, normal);
+                            hdr, containsAlpha, ldrAlpha, normalMap);
 }
 
 
@@ -316,7 +347,7 @@ static astcenc_profile makeASTCEncoderProfile(bool linear, bool hdr, bool ldrAlp
 }
 
 
-ASTCImage* fn_nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float quality, ASTCErrorInfo& error, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) {
+ASTCImage* fn_nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float quality, ASTCError& error, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) {
     // Prepare ASTC encoder config
     astcenc_config config;
     long blockWidth = blockSize.width;
@@ -361,7 +392,7 @@ ASTCImage* fn_nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qua
         
         // Execute callback
         // TODO: We can also send back image data to see the live preview!
-        auto shouldStop = callbackContext.callback(callbackContext.userInfo, progress);
+        auto shouldStop = callbackContext.callback(callbackContext.userInfo, progress / 100);
         if (shouldStop) {
             callbackContext.cancelled = true;
             astcenc_compress_cancel(callbackContext.context);
@@ -511,7 +542,7 @@ ASTCImage::~ASTCImage() {
 }
 
 
-ASTCRawImage* fn_nullable ASTCImage::decompress(ASTCErrorInfo& error, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) {
+ASTCRawImage* fn_nullable ASTCImage::decompress(ASTCError& error, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) {
     // Prepare ASTC encoder config
     astcenc_config config;
     auto result = astcenc_config_init(makeASTCEncoderProfile(_linear, _hdr, _ldrAlpha),
@@ -532,7 +563,7 @@ ASTCRawImage* fn_nullable ASTCImage::decompress(ASTCErrorInfo& error, void* fn_n
         }
         
         // Execute callback
-        callbackContext.callback(callbackContext.userInfo, progress);
+        callbackContext.callback(callbackContext.userInfo, progress / 100);
     };
     
     astcenc_context* context = nullptr;
@@ -581,10 +612,26 @@ ASTCRawImage* fn_nullable ASTCImage::decompress(ASTCErrorInfo& error, void* fn_n
             break;
             
         case 2:
-            swizzle.r = astcenc_swz::ASTCENC_SWZ_R;
-            swizzle.g = astcenc_swz::ASTCENC_SWZ_R;
-            swizzle.b = astcenc_swz::ASTCENC_SWZ_R;
-            swizzle.a = astcenc_swz::ASTCENC_SWZ_G;
+            if (_normalMap) {
+                swizzle.r = astcenc_swz::ASTCENC_SWZ_R;
+                swizzle.g = astcenc_swz::ASTCENC_SWZ_G;
+                swizzle.b = astcenc_swz::ASTCENC_SWZ_Z;
+                swizzle.a = astcenc_swz::ASTCENC_SWZ_1;
+            }
+            else {
+                if (_containsAlpha) {
+                    swizzle.r = astcenc_swz::ASTCENC_SWZ_R;
+                    swizzle.g = astcenc_swz::ASTCENC_SWZ_R;
+                    swizzle.b = astcenc_swz::ASTCENC_SWZ_R;
+                    swizzle.a = astcenc_swz::ASTCENC_SWZ_G;
+                }
+                else {
+                    swizzle.r = astcenc_swz::ASTCENC_SWZ_R;
+                    swizzle.g = astcenc_swz::ASTCENC_SWZ_G;
+                    swizzle.b = astcenc_swz::ASTCENC_SWZ_0;
+                    swizzle.a = astcenc_swz::ASTCENC_SWZ_1;
+                }
+            }
             break;
             
         case 3:
