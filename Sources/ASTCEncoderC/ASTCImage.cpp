@@ -246,7 +246,7 @@ ASTCRawImage* fn_nullable ASTCRawImage::create(const char* fn_nonnull data fn_no
     
     // Check if there is really alpha channel, correct otherwise
     if (containsAlpha) {
-        if (componentSize != 2 && componentSize != 4) {
+        if (numComponents != 2 && numComponents != 4) {
             printf("Only textures with 2 or 4 pixel component may contain alpha channel. The containsAlpha setting is ignored.\n");
             containsAlpha = false;
         }

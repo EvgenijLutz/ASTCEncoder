@@ -3,6 +3,7 @@
 
 import PackageDescription
 
+
 let package = Package(
     name: "ASTCEncoder",
     // See the "Minimum Deployment Version for Reference Types Imported from C++":
@@ -12,7 +13,8 @@ let package = Package(
         .iOS(.v12),
         .tvOS(.v12),
         .watchOS(.v8),
-        .visionOS(.v1)
+        .visionOS(.v1),
+        .custom("Android", versionString: "5.0")
     ],
     products: [
         .library(
@@ -29,10 +31,19 @@ let package = Package(
         ),
     ],
     targets: [
-        .binaryTarget(
-            name: "astcenc",
-            path: "Binaries/astcenc.xcframework"
-        ),
+        {
+#if os(macOS) || os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
+            .binaryTarget(
+                name: "astcenc",
+                path: "Binaries/astcenc.xcframework"
+            )
+#else
+            .binaryTarget(
+                name: "astcenc",
+                path: "Binaries/astcenc.artifactbundle"
+            )
+#endif
+        }(),
         .target(
             name: "ASTCEncoderC",
             dependencies: [
@@ -48,7 +59,8 @@ let package = Package(
                 .target(name: "ASTCEncoderC")
             ],
             swiftSettings: [
-                .interoperabilityMode(.Cxx)
+                .interoperabilityMode(.Cxx),
+                //.strictMemorySafety()
             ]
         ),
     ],

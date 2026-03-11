@@ -1,6 +1,6 @@
 # bash
 
-# astc
+# astcenc
 
 
 # LLVM cross-compile
@@ -24,13 +24,17 @@
 
 # Define some global variables
 ft_developer="/Applications/Xcode.app/Contents/Developer"
-# Output library name. Determined by the build system. Try to change the name if possible in the future
-libname=astcenc
 # Your signing identity to sign the xcframework. Execute "security find-identity -v -p codesigning" and select one from the list
-identity=B42A10624E8E06BC95CD03069100C6E67121D61B
+identity=YOUR_SIGNING_IDENTITY
 
 # Android NDK path
 ndk_path="/Users/evgenij/Library/Android/sdk/ndk/29.0.13846066"
+
+
+# Output library name. Determined by the build system. Try to change the name if possible in the future
+libname=astcenc
+# Source code folder name
+source_name="astc-encoder-5.3.0"
 
 
 # Console output formatting
@@ -42,7 +46,7 @@ last_directory=$(pwd)
 
 
 # Remove logs if exist
-# rm -f "build-apple/log.txt"
+# rm -f "build/log.txt"
 
 
 exit_if_error() {
@@ -133,6 +137,8 @@ build_library() {
   # Determine ASTC compression feature flags (probably to improve performance) or noting if not supported
   if [[ "$os_family" == "Apple" ]]; then
     local make_program=""
+    local android_settings=""
+
     if [[ "$arch" == "arm64" ]];  then
       local astc_features="-DASTCENC_ISA_NEON=ON"
       local output_name="libastcenc-neon-static"
@@ -144,35 +150,63 @@ build_library() {
 
   elif [[ "$platform" == "Android" ]]; then
     local make_program="-DCMAKE_TOOLCHAIN_FILE=${ndk_path}/build/cmake/android.toolchain.cmake"
+    local android_settings="-DANDROID_PLATFORM=android-$min_os -DANDROID_TOOLCHAIN=clang -DANDROID_STL=c++_static"
+    #local android_settings="-DANDROID_PLATFORM=android-$min_os -DANDROID_TOOLCHAIN=clang -DANDROID_STL=c++_static -DARCH=aarch64"
+    #BUILD_TYPE=RelWithDebInfo
 
+    # Android ABIs
+    # https://developer.android.com/ndk/guides/abis
     if [[ "$arch" == "aarch64" ]];  then
+      local android_settings="-DANDROID_ABI=arm64-v8a"
       local astc_features="-DASTCENC_ISA_NEON=ON"
       local output_name="libastcenc-neon-static"
+      #local astc_features="-DASTCENC_ISA_NONE=ON"
+      #local output_name="libastcenc-none-static"
 
     elif [[ "$arch" == "arm" ]]; then
-      # Doesn't compile for some reason
-      # local astc_features="-DASTCENC_ISA_NEON=ON"
-      # local output_name="libastcenc-neon-static"
+      local android_settings="-DANDROID_ABI=armeabi-v7a"
+      # Doesn't compile for some reason, although NEON should be supported on this platform
+      #local astc_features="-DASTCENC_ISA_NEON=ON"
+      #local output_name="libastcenc-neon-static"
+
       local astc_features="-DASTCENC_ISA_NONE=ON"
       local output_name="libastcenc-none-static"
 
     elif [[ "$arch" == "i686" ]]; then
-      # Doesn't compile for some reason
-      # local astc_features="-DASTCENC_ISA_SSE2=ON"
-      # local output_name="libastcenc-sse2-static"
-      local astc_features="-DASTCENC_ISA_NONE=ON"
-      local output_name="libastcenc-none-static"
+      local android_settings="-DANDROID_ABI=x86"
+
+      # Fully supported in Android x86
+      local astc_features="-DASTCENC_ISA_SSE2=ON"
+      local output_name="libastcenc-sse2-static"
+
+      #local astc_features="-DASTCENC_ISA_NONE=ON"
+      #local output_name="libastcenc-none-static"
 
     elif [[ "$arch" == "riscv64" ]]; then
       local astc_features="-DASTCENC_ISA_NONE=ON"
       local output_name="libastcenc-none-static"
 
     elif [[ "$arch" == "x86_64" ]]; then
-      # Doesn't compile for some reason
-      # local astc_features="-DASTCENC_ISA_AVX2=ON -DASTCENC_X86_GATHERS=OFF"
-      # local output_name="libastcenc-avx2-static"
-      local astc_features="-DASTCENC_ISA_NONE=ON"
-      local output_name="libastcenc-none-static"
+      local android_settings="-DANDROID_ABI=x86_64"
+
+      # Generally not available in the standard Android ecosystem
+      #local astc_features="-DASTCENC_ISA_AVX2=ON -DASTCENC_X86_GATHERS=OFF"
+      #local output_name="libastcenc-avx2-static"
+
+      # Fully supported in Android x86_64, but SSE4.1 is cooler
+      #local astc_features="-DASTCENC_ISA_SSE2=ON -DASTCENC_X86_GATHERS=OFF"
+      #local output_name="libastcenc-sse2-static"
+      
+      # Supported almost everywhere and often is required
+      local astc_features="-DASTCENC_ISA_SSE41=ON -DASTCENC_X86_GATHERS=OFF"
+      local output_name="libastcenc-sse4.1-static"
+
+      #local astc_features="-DASTCENC_ISA_NONE=ON"
+      #local output_name="libastcenc-none-static"
+      
+      # This also works, produces multiple binaries with different backends
+      #local astc_features="-DASTCENC_ISA_NONE=ON -DASTCENC_ISA_SSE2=ON -DASTCENC_ISA_SSE41=ON -DASTCENC_X86_GATHERS=OFF"
+      #local output_name="libastcenc-sse4.1-static"
 
     fi
   fi
@@ -187,38 +221,37 @@ build_library() {
   #make clean
 
   # Remove previously build foler for the specified platform and architecture if exists
-  rm -rf "build-apple/$platform/$arch"
-  mkdir -p "build-apple/$platform/$arch"
+  rm -rf "build/$platform/$arch"
+  mkdir -p "build/$platform/$arch/tmp"
 
   # Configure for the specified platform and architecture
-  rm -rf build
-  mkdir -p build
-  cd build
-  cmake .. \
+  cd build/$platform/$arch/tmp
+  cmake ../../../../$source_name \
     -DASTCENC_CLI=OFF \
-    -DASTCENC_SHAREDLIB=ON \
+    -DASTCENC_SHAREDLIB=OFF \
     -DCMAKE_BUILD_TYPE=Release \
     -DASTCENC_UNIVERSAL_BUILD=OFF \
     $astc_features \
     $make_program \
-    -DCMAKE_INSTALL_PREFIX=./install
+    $android_settings \
+    -DCMAKE_INSTALL_PREFIX=../install
   exit_if_error
 
   # Build
-  make install -j$(sysctl -n hw.ncpu)
+  make -j$(sysctl -n hw.ncpu)
   exit_if_error
 
   # Go back
-  cd ..
+  cd ../../../..
 
   # Copy library
-  mkdir -p "build-apple/$platform/$arch/lib"
-  cp build/Source/$output_name.a "build-apple/$platform/$arch/lib/$libname.a"
+  mkdir -p "build/$platform/$arch/lib"
+  cp build/$platform/$arch/tmp/Source/$output_name.a "build/$platform/$arch/lib/$libname.a"
   exit_if_error
 
   # Copy header
-  mkdir -p "build-apple/$platform/$arch/include/$libname"
-  cp Source/astcenc.h "build-apple/$platform/$arch/include/$libname/astcenc.h"
+  mkdir -p "build/$platform/$arch/include/$libname"
+  cp $source_name/Source/astcenc.h "build/$platform/$arch/include/$libname/astcenc.h"
   exit_if_error
 
   # Copy modulemap
@@ -226,9 +259,13 @@ build_library() {
   # https://clang.llvm.org/docs/Modules.html
   # Without module.modulemap astcenc is not exposed to Swift
   # Copy the module map into the directory with installed header files
-  mkdir -p build-apple/$platform/$arch/include/$libname/astcenc-Module
-  cp module.modulemap build-apple/$platform/$arch/include/$libname/astcenc-Module/module.modulemap
+  mkdir -p build/$platform/$arch/include/$libname/astcenc-Module
+  cp Contents/module.modulemap build/$platform/$arch/include/$libname/astcenc-Module/module.modulemap
   exit_if_error
+
+  # Remove temporary build data
+  rm -rf "build/$platform/$arch/tmp"
+
 }
 
 # Build for Apple systems
@@ -247,83 +284,128 @@ build_library XROS             arm64  xros1
 build_library XRSimulator      arm64  xros1-simulator
 build_library XRSimulator      x86_64 xros1-simulator
 
-# # Build for Android
-# build_library Android aarch64 21
-# build_library Android arm     21
-# build_library Android i686    21
-# build_library Android riscv64 35
-# build_library Android x86_64  21
+# Build for Android
+build_library Android aarch64 21
+build_library Android arm     21
+build_library Android i686    21
+build_library Android riscv64 35
+build_library Android x86_64  21
 
 
 create_framework() {
   # Remove previously created framework if exists
-  rm -rf build-apple/$libname.xcframework
+  rm -rf build/$libname.xcframework
   exit_if_error
 
   # Merge macOS arm and x86 binaries
-  mkdir -p build-apple/MacOSX
+  mkdir -p build/MacOSX
   exit_if_error
-  lipo -create -output build-apple/MacOSX/$libname.a \
-    build-apple/MacOSX/arm64/lib/$libname.a \
-    build-apple/MacOSX/x86_64/lib/$libname.a
+  lipo -create -output build/MacOSX/$libname.a \
+    build/MacOSX/arm64/lib/$libname.a \
+    build/MacOSX/x86_64/lib/$libname.a
   exit_if_error
 
   # Merge iOS simulator arm and x86 binaries
-  mkdir -p build-apple/iPhoneSimulator
+  mkdir -p build/iPhoneSimulator
   exit_if_error
-  lipo -create -output build-apple/iPhoneSimulator/$libname.a \
-    build-apple/iPhoneSimulator/arm64/lib/$libname.a \
-    build-apple/iPhoneSimulator/x86_64/lib/$libname.a
+  lipo -create -output build/iPhoneSimulator/$libname.a \
+    build/iPhoneSimulator/arm64/lib/$libname.a \
+    build/iPhoneSimulator/x86_64/lib/$libname.a
   exit_if_error
 
   # Merge tvOS simulator arm and x86 binaries
-  mkdir -p build-apple/AppleTVSimulator
+  mkdir -p build/AppleTVSimulator
   exit_if_error
-  lipo -create -output build-apple/AppleTVSimulator/$libname.a \
-    build-apple/AppleTVSimulator/arm64/lib/$libname.a \
-    build-apple/AppleTVSimulator/x86_64/lib/$libname.a
+  lipo -create -output build/AppleTVSimulator/$libname.a \
+    build/AppleTVSimulator/arm64/lib/$libname.a \
+    build/AppleTVSimulator/x86_64/lib/$libname.a
   exit_if_error
 
   # Merge watchOS simulator arm and x86 binaries
-  mkdir -p build-apple/WatchSimulator
+  mkdir -p build/WatchSimulator
   exit_if_error
-  lipo -create -output build-apple/WatchSimulator/$libname.a \
-    build-apple/WatchSimulator/arm64/lib/$libname.a \
-    build-apple/WatchSimulator/x86_64/lib/$libname.a
+  lipo -create -output build/WatchSimulator/$libname.a \
+    build/WatchSimulator/arm64/lib/$libname.a \
+    build/WatchSimulator/x86_64/lib/$libname.a
   exit_if_error
 
   # Merge visionOS simulator arm and x86 binaries
-  mkdir -p build-apple/XRSimulator
+  mkdir -p build/XRSimulator
   exit_if_error
-  lipo -create -output build-apple/XRSimulator/$libname.a \
-    build-apple/XRSimulator/arm64/lib/$libname.a \
-    build-apple/XRSimulator/x86_64/lib/$libname.a
+  lipo -create -output build/XRSimulator/$libname.a \
+    build/XRSimulator/arm64/lib/$libname.a \
+    build/XRSimulator/x86_64/lib/$libname.a
   exit_if_error
 
   # Create the framework with multiple platforms
   xcodebuild -create-xcframework \
-    -library build-apple/MacOSX/$libname.a              -headers build-apple/MacOSX/arm64/include/$libname \
-    -library build-apple/iPhoneOS/arm64/lib/$libname.a  -headers build-apple/iPhoneOS/arm64/include/$libname \
-    -library build-apple/iPhoneSimulator/$libname.a     -headers build-apple/iPhoneSimulator/arm64/include/$libname \
-    -library build-apple/AppleTVOS/arm64/lib/$libname.a -headers build-apple/AppleTVOS/arm64/include/$libname \
-    -library build-apple/AppleTVSimulator/$libname.a    -headers build-apple/AppleTVSimulator/arm64/include/$libname \
-    -library build-apple/WatchOS/arm64/lib/$libname.a   -headers build-apple/WatchOS/arm64/include/$libname \
-    -library build-apple/WatchSimulator/$libname.a      -headers build-apple/WatchSimulator/arm64/include/$libname \
-    -library build-apple/XROS/arm64/lib/$libname.a      -headers build-apple/XROS/arm64/include/$libname \
-    -library build-apple/XRSimulator/$libname.a         -headers build-apple/XRSimulator/arm64/include/$libname \
-    -output build-apple/$libname.xcframework
+    -library build/MacOSX/$libname.a              -headers build/MacOSX/arm64/include/$libname \
+    -library build/iPhoneOS/arm64/lib/$libname.a  -headers build/iPhoneOS/arm64/include/$libname \
+    -library build/iPhoneSimulator/$libname.a     -headers build/iPhoneSimulator/arm64/include/$libname \
+    -library build/AppleTVOS/arm64/lib/$libname.a -headers build/AppleTVOS/arm64/include/$libname \
+    -library build/AppleTVSimulator/$libname.a    -headers build/AppleTVSimulator/arm64/include/$libname \
+    -library build/WatchOS/arm64/lib/$libname.a   -headers build/WatchOS/arm64/include/$libname \
+    -library build/WatchSimulator/$libname.a      -headers build/WatchSimulator/arm64/include/$libname \
+    -library build/XROS/arm64/lib/$libname.a      -headers build/XROS/arm64/include/$libname \
+    -library build/XRSimulator/$libname.a         -headers build/XRSimulator/arm64/include/$libname \
+    -output build/$libname.xcframework
   exit_if_error
 
   # And sign the framework
-  codesign --timestamp -s $identity build-apple/$libname.xcframework
+  codesign --timestamp -s $identity build/$libname.xcframework
   exit_if_error
 }
 create_framework
 
 
-# Go back
-cd "$last_directory"
+create_artifactbundle() {
+  # Remove previously created artifact if exists
+  rm -rf build/$libname.artifactbundle
+  exit_if_error
 
+  # Create the artifact bundle folder
+  mkdir -p build/$libname.artifactbundle
+  exit_if_error
+
+  # info.json
+  cp Contents/info.json build/$libname.artifactbundle/info.json
+  exit_if_error
+
+  # Headers
+  cp -r build/Android/aarch64/include build/$libname.artifactbundle/include
+  exit_if_error
+
+  # aarch64-linux-android
+  mkdir -p build/$libname.artifactbundle/aarch64-linux-android
+  exit_if_error
+  cp build/Android/aarch64/lib/$libname.a build/$libname.artifactbundle/aarch64-linux-android/$libname.a
+  exit_if_error
+
+  # arm-linux-androideabi
+  mkdir -p build/$libname.artifactbundle/arm-linux-androideabi
+  exit_if_error
+  cp build/Android/arm/lib/$libname.a build/$libname.artifactbundle/arm-linux-androideabi/$libname.a
+  exit_if_error
+
+  # i686-linux-android
+  mkdir -p build/$libname.artifactbundle/i686-linux-android
+  exit_if_error
+  cp build/Android/i686/lib/$libname.a build/$libname.artifactbundle/i686-linux-android/$libname.a
+  exit_if_error
+
+  # riscv64-linux-android
+  mkdir -p build/$libname.artifactbundle/riscv64-linux-android
+  exit_if_error
+  cp build/Android/riscv64/lib/$libname.a build/$libname.artifactbundle/riscv64-linux-android/$libname.a
+  exit_if_error
+
+  # x86_64-linux-android
+  mkdir -p build/$libname.artifactbundle/x86_64-linux-android
+  exit_if_error
+  cp build/Android/x86_64/lib/$libname.a build/$libname.artifactbundle/x86_64-linux-android/$libname.a
+  exit_if_error
+}
+create_artifactbundle
 
 
 
