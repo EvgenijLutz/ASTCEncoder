@@ -56,6 +56,7 @@ let package = Package(
         .target(
             name: "ASTCEncoder",
             dependencies: [
+                .target(name: "astcenc"),
                 .target(name: "ASTCEncoderC")
             ],
             swiftSettings: [

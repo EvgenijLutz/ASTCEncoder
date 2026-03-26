@@ -2,7 +2,7 @@
 // https://docs.swift.org/swift-book
 
 import Foundation
-import astcenc
+//import astcenc
 @_exported import ASTCEncoderC
 
 
@@ -13,6 +13,7 @@ fileprivate struct CallbackContext {
 }
 
 @available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
+//@c
 @_cdecl("astcEncoderCCallback")
 fileprivate func astcEncoderCCallback(_ userInfo: UnsafeMutableRawPointer?, _ progress: Float) -> Bool {
     userInfo?.withMemoryRebound(to: CallbackContext.self, capacity: 1) { pointer in

@@ -10,7 +10,7 @@
 			<key>HeadersPath</key>
 			<string>Headers</string>
 			<key>LibraryIdentifier</key>
-			<string>tvos-arm64_x86_64_x86_64h-simulator</string>
+			<string>ios-arm64_x86_64_x86_64h-simulator</string>
 			<key>LibraryPath</key>
 			<string>astcenc.a</string>
 			<key>SupportedArchitectures</key>
@@ -20,7 +20,7 @@
 				<string>x86_64h</string>
 			</array>
 			<key>SupportedPlatform</key>
-			<string>tvos</string>
+			<string>ios</string>
 			<key>SupportedPlatformVariant</key>
 			<string>simulator</string>
 		</dict>
@@ -50,7 +50,7 @@
 			<key>HeadersPath</key>
 			<string>Headers</string>
 			<key>LibraryIdentifier</key>
-			<string>ios-arm64_x86_64_x86_64h-simulator</string>
+			<string>watchos-arm64_x86_64_x86_64h-simulator</string>
 			<key>LibraryPath</key>
 			<string>astcenc.a</string>
 			<key>SupportedArchitectures</key>
@@ -60,9 +60,25 @@
 				<string>x86_64h</string>
 			</array>
 			<key>SupportedPlatform</key>
-			<string>ios</string>
+			<string>watchos</string>
 			<key>SupportedPlatformVariant</key>
 			<string>simulator</string>
+		</dict>
+		<dict>
+			<key>BinaryPath</key>
+			<string>astcenc.a</string>
+			<key>HeadersPath</key>
+			<string>Headers</string>
+			<key>LibraryIdentifier</key>
+			<string>xros-arm64</string>
+			<key>LibraryPath</key>
+			<string>astcenc.a</string>
+			<key>SupportedArchitectures</key>
+			<array>
+				<string>arm64</string>
+			</array>
+			<key>SupportedPlatform</key>
+			<string>xros</string>
 		</dict>
 		<dict>
 			<key>BinaryPath</key>
@@ -104,23 +120,7 @@
 			<key>HeadersPath</key>
 			<string>Headers</string>
 			<key>LibraryIdentifier</key>
-			<string>watchos-arm64</string>
-			<key>LibraryPath</key>
-			<string>astcenc.a</string>
-			<key>SupportedArchitectures</key>
-			<array>
-				<string>arm64</string>
-			</array>
-			<key>SupportedPlatform</key>
-			<string>watchos</string>
-		</dict>
-		<dict>
-			<key>BinaryPath</key>
-			<string>astcenc.a</string>
-			<key>HeadersPath</key>
-			<string>Headers</string>
-			<key>LibraryIdentifier</key>
-			<string>watchos-arm64_x86_64_x86_64h-simulator</string>
+			<string>tvos-arm64_x86_64_x86_64h-simulator</string>
 			<key>LibraryPath</key>
 			<string>astcenc.a</string>
 			<key>SupportedArchitectures</key>
@@ -130,7 +130,7 @@
 				<string>x86_64h</string>
 			</array>
 			<key>SupportedPlatform</key>
-			<string>watchos</string>
+			<string>tvos</string>
 			<key>SupportedPlatformVariant</key>
 			<string>simulator</string>
 		</dict>
@@ -156,7 +156,7 @@
 			<key>HeadersPath</key>
 			<string>Headers</string>
 			<key>LibraryIdentifier</key>
-			<string>xros-arm64</string>
+			<string>watchos-arm64</string>
 			<key>LibraryPath</key>
 			<string>astcenc.a</string>
 			<key>SupportedArchitectures</key>
@@ -164,7 +164,7 @@
 				<string>arm64</string>
 			</array>
 			<key>SupportedPlatform</key>
-			<string>xros</string>
+			<string>watchos</string>
 		</dict>
 	</array>
 	<key>CFBundlePackageType</key>
