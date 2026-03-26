@@ -14,7 +14,7 @@
 		</data>
 		<key>ios-arm64/astcenc.a</key>
 		<data>
-		ABZgodDJyslm8vwHsCeD+OZfXPM=
+		A9dDgjvGGuIAhNdyqtX3zuyH+XE=
 		</data>
 		<key>ios-arm64_x86_64_x86_64h-simulator/Headers/astcenc-Module/module.modulemap</key>
 		<data>
@@ -26,7 +26,7 @@
 		</data>
 		<key>ios-arm64_x86_64_x86_64h-simulator/astcenc.a</key>
 		<data>
-		ME4/H3yrLGl/NSDdGSDBnu+DzWg=
+		fN2x6cRiX4YOleNrWPvv8RPPokI=
 		</data>
 		<key>macos-arm64_x86_64_x86_64h/Headers/astcenc-Module/module.modulemap</key>
 		<data>
@@ -38,7 +38,7 @@
 		</data>
 		<key>macos-arm64_x86_64_x86_64h/astcenc.a</key>
 		<data>
-		LHw51c0uGgE4yXTlbHF6cVUbJVo=
+		j6/JZuCz9HAa69Fe3MhiwBYzy4E=
 		</data>
 		<key>tvos-arm64/Headers/astcenc-Module/module.modulemap</key>
 		<data>
@@ -50,7 +50,7 @@
 		</data>
 		<key>tvos-arm64/astcenc.a</key>
 		<data>
-		YYVDbEdpBEkl1cU1bQmCkg3Vf4E=
+		Cq/ViUI8rGSvXrcaThfUGzFXijo=
 		</data>
 		<key>tvos-arm64_x86_64_x86_64h-simulator/Headers/astcenc-Module/module.modulemap</key>
 		<data>
@@ -62,7 +62,7 @@
 		</data>
 		<key>tvos-arm64_x86_64_x86_64h-simulator/astcenc.a</key>
 		<data>
-		BxT0ucdzE3xvlEwGQsdMlbOJqEE=
+		8ABn8z3/M/VuMtb1TiaLnYWzqrU=
 		</data>
 		<key>watchos-arm64/Headers/astcenc-Module/module.modulemap</key>
 		<data>
@@ -74,7 +74,7 @@
 		</data>
 		<key>watchos-arm64/astcenc.a</key>
 		<data>
-		OFTt+PuXi/eWPCVRRY3JKbNugwc=
+		pESZhIHeGLLuvCxaSyfFpD13MqY=
 		</data>
 		<key>watchos-arm64_x86_64_x86_64h-simulator/Headers/astcenc-Module/module.modulemap</key>
 		<data>
@@ -86,7 +86,7 @@
 		</data>
 		<key>watchos-arm64_x86_64_x86_64h-simulator/astcenc.a</key>
 		<data>
-		l3GCl4At/dgtvwgYY8Q++M0p2L4=
+		xnCdZuuvkcQPmLaV2br3aMXhbm4=
 		</data>
 		<key>xros-arm64/Headers/astcenc-Module/module.modulemap</key>
 		<data>
@@ -98,7 +98,7 @@
 		</data>
 		<key>xros-arm64/astcenc.a</key>
 		<data>
-		JPz0LslDSQIWXKxTYYyfu9lxjdM=
+		VEnj/WtMcUCSZEZ3RblUryUjn6c=
 		</data>
 		<key>xros-arm64_x86_64_x86_64h-simulator/Headers/astcenc-Module/module.modulemap</key>
 		<data>
@@ -110,7 +110,7 @@
 		</data>
 		<key>xros-arm64_x86_64_x86_64h-simulator/astcenc.a</key>
 		<data>
-		Ix8IXZrqxeRGEkETqnezvlwuJs8=
+		4U8w7Qh61H9Wwa0MNssokaMkOrY=
 		</data>
 	</dict>
 	<key>files2</key>
@@ -133,7 +133,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			9W4ELnelIwUg9M42Qh77lyKL/0iOJbIr4jRA2k1dPP8=
+			n9VYp+YOZGgRe0R1TUm5bsgdZu1SXBnRGkHlBUF8FCU=
 			</data>
 		</dict>
 		<key>ios-arm64_x86_64_x86_64h-simulator/Headers/astcenc-Module/module.modulemap</key>
@@ -154,7 +154,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			N5hv/AvWlgbpTql2/zsAiV52XmJBzoQG9uR22rQ+7tk=
+			0N7yzJsK4obL7fv+ktuVqpBuiE/C2H9TY3efwv2ladI=
 			</data>
 		</dict>
 		<key>macos-arm64_x86_64_x86_64h/Headers/astcenc-Module/module.modulemap</key>
@@ -175,7 +175,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			f1lux06kXZ6g6w69L3TynQx90IC9o05zCj2hH1UC+F4=
+			KWilQ5TmP2ds53+y05sR7Y7LqwujzlHYyGoDK2Fu/jo=
 			</data>
 		</dict>
 		<key>tvos-arm64/Headers/astcenc-Module/module.modulemap</key>
@@ -196,7 +196,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			aXtAdLSUbsvEkkGl1AHsQ5FI2JXOqlS8PlufYJLlhEo=
+			gNcj+gqw+cdAz7zOLqXmRm+4XHvTyVop5Y2RDDLIsUw=
 			</data>
 		</dict>
 		<key>tvos-arm64_x86_64_x86_64h-simulator/Headers/astcenc-Module/module.modulemap</key>
@@ -217,7 +217,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			y/jZslsgt6v+pjCNF+JVtp9yz74bA+MjpRVOoKqMqaM=
+			K+N/uKhTTPfDoP88LbDi/FW6h6y9ojWxw+mg8knBAsc=
 			</data>
 		</dict>
 		<key>watchos-arm64/Headers/astcenc-Module/module.modulemap</key>
@@ -238,7 +238,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			bw+zYc9472sITl8dTz3DEI3MKB8JGQtQYN2kS0+Kz58=
+			8BtQvL9FgQvPUPqj9760EjwXYS80gy8KUb2OSFQ5vGE=
 			</data>
 		</dict>
 		<key>watchos-arm64_x86_64_x86_64h-simulator/Headers/astcenc-Module/module.modulemap</key>
@@ -259,7 +259,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			Hta57pIXAD5nQX66QMpYEy4Ikb5EadWQZTJgyuM6VdI=
+			NZ0RcCrsGVSADnUM+7Ae2i4V7u0+egpz9wtl1FmFJuU=
 			</data>
 		</dict>
 		<key>xros-arm64/Headers/astcenc-Module/module.modulemap</key>
@@ -280,7 +280,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			kaiT0bMKshRkkW6dN0yh75Exq1IOBFmGyJqqw7b9SRw=
+			5bR5ObCamoRahPmwidH84bBGtb/OS1MsTf9i8vUZ768=
 			</data>
 		</dict>
 		<key>xros-arm64_x86_64_x86_64h-simulator/Headers/astcenc-Module/module.modulemap</key>
@@ -301,7 +301,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			Cj8fLqFRpT8ZCxSipVaGgqQ1tzmfWr3Ca5xEcqt1ksc=
+			MCgNwko8zWkU4fx6bswYsbnttTMCxNshXgQaLvVOEe0=
 			</data>
 		</dict>
 	</dict>
