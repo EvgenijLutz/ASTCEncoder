@@ -129,8 +129,9 @@ private:
     const bool _linear;
     /// High dynamic range support. The `_linear` property has to be true.
     const bool _hdr;
-    /// Image contains alpha channel. Allows more accurate enconding in opaque areas. Only valid if number of components is either `2` or `4`.
+    /// Image contains alpha channel. Allows more accurate enconding in opaque areas. Only valid if number of components is either `2` or `4`, otherwise ignored.
     const bool _containsAlpha;
+    /// Only valid if ``_containsAlpha`` is `true`, otherwise ignored.
     const bool _ldrAlpha;
     /// Normal map.
     const bool _normalMap;

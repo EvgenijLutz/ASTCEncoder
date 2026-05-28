@@ -401,7 +401,7 @@ ASTCImage* fn_nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qua
     
     astcenc_context* context = nullptr;
     auto numThreads = 1; //std::thread::hardware_concurrency();
-    result = astcenc_context_alloc(&config, numThreads, &context);
+    result = astcenc_context_alloc(&config, numThreads, &context, nullptr);
     if (result != astcenc_error::ASTCENC_SUCCESS) {
         error.setErrorMessage("Could not create context");
         return nullptr;
@@ -568,7 +568,7 @@ ASTCRawImage* fn_nullable ASTCImage::decompress(ASTCError& error, void* fn_nulla
     
     astcenc_context* context = nullptr;
     auto numThreads = 1; //std::thread::hardware_concurrency();
-    result = astcenc_context_alloc(&config, numThreads, &context);
+    result = astcenc_context_alloc(&config, numThreads, &context, nullptr);
     if (result != astcenc_error::ASTCENC_SUCCESS) {
         error.setErrorMessage("Could not create context");
         return nullptr;

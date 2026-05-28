@@ -6,8 +6,6 @@ import PackageDescription
 
 let package = Package(
     name: "ASTCEncoder",
-    // See the "Minimum Deployment Version for Reference Types Imported from C++":
-    // https://www.swift.org/documentation/cxx-interop/status/
     platforms: [
         .macOS(.v10_13),
         .iOS(.v12),

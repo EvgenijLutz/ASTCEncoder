@@ -44,7 +44,7 @@ extension ASTCError: @retroactive Error, @retroactive CustomStringConvertible {
     
     var message: String {
         guard let errorMessage else {
-            return ""
+            return "<no message>"
         }
         
         return String(cString: errorMessage)

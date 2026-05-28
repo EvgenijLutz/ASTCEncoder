@@ -1,62 +1,25 @@
-# bash
+# bash build-apple.sh
 
-# astcenc
+# astc-encoder
 
-
-# LLVM cross-compile
-# https://llvm.org/docs/HowToCrossCompileLLVM.html
-
-
-# Target triplets and cross-compilation using Clang
-# https://clang.llvm.org/docs/CrossCompilation.html#target-triple
-
-
-# Build for Android using other build systems
-# https://developer.android.com/ndk/guides/other_build_systems
-
-
-# Binary Static Library Dependencies
-# https://github.com/swiftlang/swift-evolution/blob/main/proposals/0482-swiftpm-static-library-binary-target-non-apple-platforms.md
+source common.sh
 
 
 # Get some help
 #./configure -help >> configure-help.txt
 
-# Define some global variables
-ft_developer="/Applications/Xcode.app/Contents/Developer"
-# Your signing identity to sign the xcframework. Execute "security find-identity -v -p codesigning" and select one from the list
-identity=YOUR_SIGNING_IDENTITY
-
-# Android NDK path
-ndk_path="/Users/evgenij/Library/Android/sdk/ndk/29.0.13846066"
-
 
 # Output library name. Determined by the build system. Try to change the name if possible in the future
 libname=astcenc
 # Source code folder name
-source_name="astc-encoder-5.3.0"
+source_name="astc-encoder-5.4.0"
 
-
-# Console output formatting
-# https://stackoverflow.com/a/2924755
-bold=$(tput bold)
-normal=$(tput sgr0)
 
 last_directory=$(pwd)
 
 
 # Remove logs if exist
 # rm -f "build/log.txt"
-
-
-exit_if_error() {
-  local result=$?
-  if [ $result -ne 0 ] ; then
-     echo "Received an exit code $result, aborting"
-     cd "$last_directory"
-     exit 1
-  fi
-}
 
 
 build_library() {
@@ -183,6 +146,8 @@ build_library() {
       #local output_name="libastcenc-none-static"
 
     elif [[ "$arch" == "riscv64" ]]; then
+      # TODO: Check this platform if the name is correct
+      local android_settings="-DANDROID_ABI=riscv64"
       local astc_features="-DASTCENC_ISA_NONE=ON"
       local output_name="libastcenc-none-static"
 
