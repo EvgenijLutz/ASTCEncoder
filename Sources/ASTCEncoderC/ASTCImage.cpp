@@ -17,7 +17,11 @@
 struct ASTCCallbackContext {
     astcenc_context* fn_nullable context;
     void* fn_nullable userInfo = nullptr;
-    ASTCEncoderProgressCallback fn_nullable callback = nullptr;
+    
+    ASTCImageEncoderContext encoderContext;
+    ASTCEncoderProgressCallback fn_nullable encoderCallback = nullptr;
+    
+    ASTCDecoderProgressCallback fn_nullable decoderCallback = nullptr;
     
     // Task was cancelled during compression
     bool cancelled;
@@ -25,7 +29,8 @@ struct ASTCCallbackContext {
     void reset() {
         context = nullptr;
         userInfo = nullptr;
-        callback = nullptr;
+        encoderCallback = nullptr;
+        decoderCallback = nullptr;
         cancelled = false;
     }
 };
@@ -127,6 +132,17 @@ const ASTCBlockSize ASTCBlockSize::_6x6x6 = ASTCBlockSize(6, 6, 6);
 
 bool ASTCBlockSize::operator == (const ASTCBlockSize& other) const {
     return width == other.width && height == other.height && depth == other.depth;
+}
+
+
+// MARK: ASTCImageEncoderContext
+
+
+ASTCImage* fn_nonnull ASTCImageEncoderContext::extractImage() const SWIFT_RETURNS_RETAINED {
+    auto owner = reinterpret_cast<ASTCRawImage*>(this->owner);
+    auto astcDataCopy = reinterpret_cast<char*>(malloc(dataLength));
+    memcpy(astcDataCopy, astcData, dataLength);
+    return new ASTCImage(astcDataCopy, owner->_width, owner->_height, owner->_depth, owner->_originalNumComponents, owner->_componentSize, owner->_linear, owner->_hdr, owner->_containsAlpha, owner->_ldrAlpha, owner->_normalMap, astcXCount, astcYCount, astcZCount, blockSize);
 }
 
 
@@ -381,7 +397,7 @@ ASTCImage* fn_nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qua
     }
     // Power user settings
     config.progress_callback = [](float progress) {
-        if (callbackContext.callback == nullptr) {
+        if (callbackContext.encoderCallback == nullptr) {
             return;
         }
         
@@ -392,7 +408,7 @@ ASTCImage* fn_nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qua
         
         // Execute callback
         // TODO: We can also send back image data to see the live preview!
-        auto shouldStop = callbackContext.callback(callbackContext.userInfo, progress / 100);
+        auto shouldStop = callbackContext.encoderCallback(callbackContext.userInfo, progress / 100, callbackContext.encoderContext);
         if (shouldStop) {
             callbackContext.cancelled = true;
             astcenc_compress_cancel(callbackContext.context);
@@ -411,7 +427,8 @@ ASTCImage* fn_nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qua
     // Set callback context
     callbackContext.context = context;
     callbackContext.userInfo = userInfo;
-    callbackContext.callback = progressCallback;
+    callbackContext.encoderContext = {};
+    callbackContext.encoderCallback = progressCallback;
     callbackContext.cancelled = false;
     
     
@@ -487,6 +504,14 @@ ASTCImage* fn_nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qua
     char* astcData = new char[dataLength];
     memset(astcData, 0, dataLength);
     
+    callbackContext.encoderContext.owner = this;
+    callbackContext.encoderContext.astcXCount = astcXCount;
+    callbackContext.encoderContext.astcYCount = astcYCount;
+    callbackContext.encoderContext.astcZCount = astcZCount;
+    callbackContext.encoderContext.blockSize = blockSize;
+    callbackContext.encoderContext.dataLength = dataLength;
+    callbackContext.encoderContext.astcData = astcData;
+    
     // Compress image
     auto compressedData = reinterpret_cast<uint8_t*>(astcData);
     result = astcenc_compress_image(context, &image, &swizzle, compressedData, dataLength, 0);
@@ -542,7 +567,7 @@ ASTCImage::~ASTCImage() {
 }
 
 
-ASTCRawImage* fn_nullable ASTCImage::decompress(ASTCError& error, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) {
+ASTCRawImage* fn_nullable ASTCImage::decompress(ASTCError& error, void* fn_nullable userInfo fn_noescape, ASTCDecoderProgressCallback fn_nullable progressCallback fn_noescape) {
     // Prepare ASTC encoder config
     astcenc_config config;
     auto result = astcenc_config_init(makeASTCEncoderProfile(_linear, _hdr, _ldrAlpha),
@@ -558,12 +583,12 @@ ASTCRawImage* fn_nullable ASTCImage::decompress(ASTCError& error, void* fn_nulla
     }
     // Power user settings
     config.progress_callback = [](float progress) {
-        if (callbackContext.callback == nullptr) {
+        if (callbackContext.decoderCallback == nullptr) {
             return;
         }
         
         // Execute callback
-        callbackContext.callback(callbackContext.userInfo, progress / 100);
+        callbackContext.decoderCallback(callbackContext.userInfo, progress / 100);
     };
     
     astcenc_context* context = nullptr;
@@ -578,7 +603,7 @@ ASTCRawImage* fn_nullable ASTCImage::decompress(ASTCError& error, void* fn_nulla
     // Set callback context
     callbackContext.context = context;
     callbackContext.userInfo = userInfo;
-    callbackContext.callback = progressCallback;
+    callbackContext.decoderCallback = progressCallback;
     callbackContext.cancelled = false;
     
     

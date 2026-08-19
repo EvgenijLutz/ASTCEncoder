@@ -12,7 +12,7 @@ source common.sh
 # Output library name. Determined by the build system. Try to change the name if possible in the future
 libname=astcenc
 # Source code folder name
-source_name="astc-encoder-5.4.0"
+source_name="astc-encoder-5.6.0"
 
 
 last_directory=$(pwd)

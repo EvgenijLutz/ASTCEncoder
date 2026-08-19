@@ -31,15 +31,9 @@ let package = Package(
     targets: [
         {
 #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
-            .binaryTarget(
-                name: "astcenc",
-                path: "Binaries/astcenc.xcframework"
-            )
+            .binaryTarget(name: "astcenc", path: "Binaries/astcenc.xcframework")
 #else
-            .binaryTarget(
-                name: "astcenc",
-                path: "Binaries/astcenc.artifactbundle"
-            )
+            .binaryTarget(name: "astcenc", path: "Binaries/astcenc.artifactbundle")
 #endif
         }(),
         .target(
@@ -49,6 +43,9 @@ let package = Package(
             ],
             cxxSettings: [
                 .enableWarning("all")
+            ],
+            swiftSettings: [
+                .interoperabilityMode(.Cxx)
             ]
         ),
         .target(
@@ -59,7 +56,7 @@ let package = Package(
             ],
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
-                //.strictMemorySafety()
+                .strictMemorySafety()
             ]
         ),
     ],

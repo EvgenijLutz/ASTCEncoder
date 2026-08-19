@@ -14,6 +14,7 @@
 #define ASTC_ENCODER_ERROR_SIZE 128
 
 
+struct ASTCImageEncoderContext;
 class ASTCRawImage;
 class ASTCImage;
 
@@ -42,7 +43,7 @@ public:
 /// ASTC block dimensions.
 ///
 /// Access ``ASTCBlockSize``'s predefined static variables like ``ASTCBlockSize/_4x4-type.property`` to get valid block sizes.
-struct ASTCBlockSize {
+struct ASTCBlockSize final {
     long width;
     long height;
     long depth;
@@ -91,12 +92,32 @@ struct ASTCBlockSize {
 } SWIFT_CONFORMS_TO_PROTOCOL(Swift.Equatable);
 
 
+struct ASTCImageEncoderContext final {
+    void* fn_nullable owner;
+    long astcXCount;
+    long astcYCount;
+    long astcZCount;
+    ASTCBlockSize blockSize;
+    size_t dataLength;
+    char* fn_nullable astcData;
+    
+    ASTCImageEncoderContext() { }
+    ~ASTCImageEncoderContext() { }
+    
+    [[nodiscard]] ASTCImage* fn_nonnull extractImage() const SWIFT_RETURNS_RETAINED;
+}
+SWIFT_UNCHECKED_SENDABLE;
+
+
 /// ASTC encoder progress callback.
 ///
 /// Specify a callback in the ``ASTCRawImage/compress-method`` method to track compression progress.
 ///
 /// - Returns: `true` if encoder should stop encoding, otherwise `false`.
-typedef bool (* ASTCEncoderProgressCallback)(void* fn_nullable userInfo, float progress);
+typedef bool (* ASTCEncoderProgressCallback)(void* fn_nullable userInfo, float progress, const ASTCImageEncoderContext& compressorInfo);
+
+
+typedef bool (* ASTCDecoderProgressCallback)(void* fn_nullable userInfo, float progress);
 
 
 // MARK: - ASTCRawImage
@@ -115,7 +136,7 @@ typedef bool (* ASTCEncoderProgressCallback)(void* fn_nullable userInfo, float p
 /// ```
 ///
 /// - Note: This object is immutable. Thus, it's safe to use it from concurrent threads. At the moment it's a 2D image, **depth support coming soon**.
-class ASTCRawImage {
+class ASTCRawImage final {
 private:
     std::atomic<size_t> _referenceCounter;
     
@@ -137,6 +158,7 @@ private:
     const bool _normalMap;
     
     
+    friend struct ASTCImageEncoderContext;
     friend class ASTCImage;
     FN_FRIEND_SWIFT_INTERFACE(ASTCRawImage)
     
@@ -165,7 +187,7 @@ public:
     /// - Parameter error: error description container is something goes wrong.
     ///
     /// - Returns: an instance of ``ASTCRawImage`` if all input data is valid. Otherwise `null` is returned and `error` will contain verbose information what went wrong.
-    static ASTCRawImage* fn_nullable create(const char* fn_nonnull contents fn_noescape, long width, long height, long depth, long numComponents, long componentSize, bool integerComponents, bool littleEndian, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap, ASTCError& error) SWIFT_NAME(__createUnsafe(_:width:height:depth:numComponents:componentSize:integerComponents:littleEndian:linear:hdr:containsAlpha:ldrAlpha:normalMap:error:)) SWIFT_RETURNS_RETAINED;
+    [[nodiscard]] static ASTCRawImage* fn_nullable create(const char* fn_nonnull contents fn_noescape, long width, long height, long depth, long numComponents, long componentSize, bool integerComponents, bool littleEndian, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap, ASTCError& error) SWIFT_NAME(__createUnsafe(_:width:height:depth:numComponents:componentSize:integerComponents:littleEndian:linear:hdr:containsAlpha:ldrAlpha:normalMap:error:)) SWIFT_RETURNS_RETAINED;
     
     
     /// Compresses image contents using specified block size and compression quality into an ``ASTCImage``.
@@ -179,7 +201,7 @@ public:
     /// - Returns: an instance of ``ASTCImage`` on success. Otherwise `null` is returned and `error` will contain verbose information what went wrong.
     ///
     /// - Warning: This method is computationally intensive. Delegate its work to a concurrent thread or task to make sure that your working thread is not blocked. When delegating to a concurrent thread, don't forget to retain this object using the ``ASTCRawImageRetain`` function before passing to other context and ``ASTCRawImageRelease`` after finishing work on a concurrent thread to acheive proper retain/release cycles and make sure that the object does not get prematurely destroyed.
-    ASTCImage* fn_nullable compress(ASTCBlockSize blockSize, float quality, ASTCError& error, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) SWIFT_NAME(__compressUnsafe(blockSize:quality:error:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
+    [[nodiscard]] ASTCImage* fn_nullable compress(ASTCBlockSize blockSize, float quality, ASTCError& error, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) SWIFT_NAME(__compressUnsafe(blockSize:quality:error:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
     
     
     // TODO: Migrate to @lifebound Spans by returning std::span when this Swift feature will be available
@@ -219,7 +241,7 @@ public:
     bool getLinear() SWIFT_COMPUTED_PROPERTY { return _linear; }
     bool getHDR() SWIFT_COMPUTED_PROPERTY { return _hdr; }
 }
-SWIFT_PRIVATE_FILEID("ASTCEncoder/ASTCEncoder.swift")
+SWIFT_PRIVATE_FILEID("ASTCEncoder/ASTCRawImage.swift")
 FN_SWIFT_INTERFACE(ASTCRawImage)
 SWIFT_UNCHECKED_SENDABLE;
 
@@ -231,7 +253,7 @@ SWIFT_UNCHECKED_SENDABLE;
 /// - Note: This object is immutable. Thus, it's safe to use it from concurrent threads.
 ///
 /// - Seealso: [Wikipedia](https://en.wikipedia.org/wiki/Adaptive_scalable_texture_compression), ["Adaptive Scalable Texture Compression" (PDF)](https://www.cs.cmu.edu/afs/cs/academic/class/15869-f11/www/readings/nystad12_astc.pdf).
-class ASTCImage {
+class ASTCImage final {
 private:
     std::atomic<size_t> _referenceCounter;
     
@@ -253,6 +275,7 @@ private:
     const ASTCBlockSize _blockSize;
     
     
+    friend struct ASTCImageEncoderContext;
     friend class ASTCRawImage;
     FN_FRIEND_SWIFT_INTERFACE(ASTCImage)
     
@@ -266,7 +289,7 @@ private:
     ~ASTCImage();
     
 public:
-    ASTCRawImage* fn_nullable decompress(ASTCError& error, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) SWIFT_NAME(__decompressUnsafe(error:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
+    ASTCRawImage* fn_nullable decompress(ASTCError& error, void* fn_nullable userInfo fn_noescape, ASTCDecoderProgressCallback fn_nullable progressCallback fn_noescape) SWIFT_NAME(__decompressUnsafe(error:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
     
     long getWidth() SWIFT_COMPUTED_PROPERTY { return _width; }
     long getHeight() SWIFT_COMPUTED_PROPERTY { return _height; }
