@@ -15,35 +15,32 @@ Add the following dependency to your Package.swift:
 ```
 
 
-### Original astcenc API in C/C++
-Add a dependency to your target:
+Original astcenc API in C/C++
 ```Swift
+// Add a dependency to your target
 .product(name: "astcenc", package: "ASTCEncoder")
-```
-And then include the `astcenc.h` header:
-```Cpp
+
+// And then include the `astcenc.h` header
 #include <astcenc.h>
 ```
 
 
-### Original astcenc API with additional helpers in C++
+Original astcenc API with additional helpers in C++
 ```Swift
-.product(name: "ASTCEncoderC", package: "ASTCEncoder"),
-```
+// Add a dependency to your target
+.product(name: "ASTCEncoderC", package: "ASTCEncoder")
 
-And then include the `ASTCEncoderC.hpp` header:
-```Cpp
+// And then include the `ASTCEncoderC.hpp` header
 #include <ASTCEncoderC/ASTCEncoderC.hpp>
 ```
 
 
-### Swift API
+Swift API
 ```Swift
-.product(name: "ASTCEncoder", package: "ASTCEncoder"),
-```
+// Add a dependency to your target
+.product(name: "ASTCEncoder", package: "ASTCEncoder")
 
-And then import the module in your target:
-```Swift
+// And then import the module in your target
 import ASTCEncoder
 ```
 
