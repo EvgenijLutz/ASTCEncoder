@@ -4,6 +4,7 @@ ARM's [astc-encoder](https://github.com/ARM-software/astc-encoder) library prebu
 Current version: [5.6.0](https://github.com/ARM-software/astc-encoder/releases/tag/5.6.0).
 
 ![An example of compressing a 384x384 image (original on the left) using the biggest (12x12) block size with the highest quality - 432KB vs 16KB](Resources/Media/Example-1.png)
+_An example of compressing a 384x384 image (original on the left) using the biggest (12x12) block size with the highest quality - 432KB vs 16KB_
 
 ## Installing ASTCEncoder
 
@@ -14,9 +15,9 @@ Add the following dependency to your Package.swift:
 ```
 
 
-If you want to use original astcenc API in C/C++:
+### Original astcenc API in C/C++
+Add a dependency to your target:
 ```Swift
-// Add a dependency to your target
 .product(name: "astcenc", package: "ASTCEncoder")
 ```
 And then include the `astcenc.h` header:
@@ -25,7 +26,7 @@ And then include the `astcenc.h` header:
 ```
 
 
-If you want to use original astcenc API with additional helpers in C++:
+### Original astcenc API with additional helpers in C++
 ```Swift
 .product(name: "ASTCEncoderC", package: "ASTCEncoder"),
 ```
@@ -36,7 +37,7 @@ And then include the `ASTCEncoderC.hpp` header:
 ```
 
 
-If you want to use Swift API:
+### Swift API
 ```Swift
 .product(name: "ASTCEncoder", package: "ASTCEncoder"),
 ```
