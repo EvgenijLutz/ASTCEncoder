@@ -20,19 +20,17 @@ fileprivate struct ASTCDecompressorContext {
 
 
 @available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
-@safe @c fileprivate func astcEncoderDecompressCCallback(_ userInfo: UnsafeMutableRawPointer?, _ progress: Float) -> Bool {
+@safe @c fileprivate func astcEncoderDecompressCCallback(_ userInfo: UnsafeMutableRawPointer?, _ progress: Float) {
     unsafe userInfo?.withMemoryRebound(to: ASTCDecompressorContext.self, capacity: 1) { pointer in
         unsafe pointer.pointee.progressCallback(progress)
     }
-    
-    return Task.isCancelled
 }
 
 
 @safe fileprivate func withASTCDecoderCallback<T>(_ callback: ASTCDecompressorCallback, action: (_ userInfo: UnsafeMutableRawPointer?) throws -> T) rethrows -> T {
     return try withoutActuallyEscaping(callback) { escapingClosure in
         var callbackContext = ASTCDecompressorContext(progressCallback: escapingClosure)
-        return unsafe try withUnsafeMutablePointer(to: &callbackContext) { pointer in
+        return try withUnsafeMutablePointer(to: &callbackContext) { pointer in
             unsafe try action(pointer)
         }
     }

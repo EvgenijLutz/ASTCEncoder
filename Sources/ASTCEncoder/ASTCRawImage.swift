@@ -73,7 +73,7 @@ public typealias ASTCEncoderCallback = (_ progress: Float, _ info: ASTCImageEnco
 @safe public func withASTCEncoderCallback<T>(_ callback: ASTCEncoderCallback, action: (_ userInfo: UnsafeMutableRawPointer?) throws -> T) rethrows -> T {
     return unsafe try withoutActuallyEscaping(callback) { escapingClosure in
         var callbackContext = unsafe CallbackContext(progressCallback: escapingClosure)
-        return unsafe try withUnsafeMutablePointer(to: &callbackContext) { pointer in
+        return try withUnsafeMutablePointer(to: &callbackContext) { pointer in
             unsafe try action(pointer)
         }
     }

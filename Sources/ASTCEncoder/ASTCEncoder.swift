@@ -11,7 +11,7 @@ import Foundation
 @safe extension ASTCError: @retroactive Error, @retroactive CustomStringConvertible {
     init(_ message: String) {
         self.init()
-        unsafe message.withCString { pointer in
+        message.withCString { pointer in
             unsafe setErrorMessage(pointer)
         }
     }
@@ -41,22 +41,23 @@ extension ASTCBlockSize: @retroactive Hashable {
 
 
 public typealias ASTCCompressionQuality = Float
+@available(macOS 13.3, iOS 16.4, tvOS 16.4, watchOS 9.4, visionOS 1.0, *)
 public extension ASTCCompressionQuality {
     /// The fastest, lowest quality, search preset.
-    static let fastest: ASTCCompressionQuality = ASTCENC_PRE_FASTEST
+    static let fastest: ASTCCompressionQuality = ASTCImage.compressionQualityFastest
     
     /// The fast search preset.
-    static let fast: ASTCCompressionQuality = ASTCENC_PRE_FAST
+    static let fast: ASTCCompressionQuality = ASTCImage.compressionQualityFast
     
     /// The medium quality search preset.
-    static let medium: ASTCCompressionQuality = ASTCENC_PRE_MEDIUM
+    static let medium: ASTCCompressionQuality = ASTCImage.compressionQualityMedium
     
     /// The thorough quality search preset.
-    static let thorough: ASTCCompressionQuality = ASTCENC_PRE_THOROUGH
+    static let thorough: ASTCCompressionQuality = ASTCImage.compressionQualityThorough
     
     /// The thorough quality search preset.
-    static let veryThorough: ASTCCompressionQuality = ASTCENC_PRE_VERYTHOROUGH
+    static let veryThorough: ASTCCompressionQuality = ASTCImage.compressionQualityVeryThorough
     
     /// The exhaustive, highest quality, search preset.
-    static let exhaustive: ASTCCompressionQuality = ASTCENC_PRE_EXHAUSTIVE
+    static let exhaustive: ASTCCompressionQuality = ASTCImage.compressionQualityExhaustive
 }

@@ -99,7 +99,7 @@ struct ASTCImageEncoderContext final {
     long astcZCount;
     ASTCBlockSize blockSize;
     size_t dataLength;
-    char* fn_nullable astcData;
+    std::byte* fn_nullable astcData;
     
     ASTCImageEncoderContext() { }
     ~ASTCImageEncoderContext() { }
@@ -117,7 +117,7 @@ SWIFT_UNCHECKED_SENDABLE;
 typedef bool (* ASTCEncoderProgressCallback)(void* fn_nullable userInfo, float progress, const ASTCImageEncoderContext& compressorInfo);
 
 
-typedef bool (* ASTCDecoderProgressCallback)(void* fn_nullable userInfo, float progress);
+typedef void (* ASTCDecoderProgressCallback)(void* fn_nullable userInfo, float progress);
 
 
 // MARK: - ASTCRawImage
@@ -140,7 +140,8 @@ class ASTCRawImage final {
 private:
     std::atomic<size_t> _referenceCounter;
     
-    /*const*/ char* fn_nonnull _contents;
+    std::byte* fn_nonnull _contents;
+    bool _ownsContents;
     const long _width;
     const long _height;
     const long _depth;
@@ -163,7 +164,7 @@ private:
     FN_FRIEND_SWIFT_INTERFACE(ASTCRawImage)
     
     
-    ASTCRawImage(char* fn_nonnull contents, long width, long height, long depth, long originalNumComponents, long componentSize, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap);
+    ASTCRawImage(std::byte* fn_nonnull contents, bool ownsContents, long width, long height, long depth, long originalNumComponents, long componentSize, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap);
     ~ASTCRawImage();
     
 public:
@@ -171,11 +172,11 @@ public:
     ///
     /// The `contents` component values are expected to be either unsigned integers for standard dynamic range (`hdr = false`) or floating poins for extended dynamic range (`hdr = true` and `componentSize` is either `2` or `4`), depending on the `hdr` setting.
     ///
-    /// - Parameter contents: image contens to copy in `R`, `RG`, `RGB` or `RGBA` pixel format.
+    /// - Parameter contents: image contens to copy in `R`, `RG`, `RGB` or `RGBA` pixel format. It can be either 8-bit unorm, 16-bit half-float, or 32-bit float.
     /// - Parameter width: width, surprise.
     /// - Parameter height: height.
     /// - Parameter depth: depth.
-    /// - Parameter numComponents: number of components. The valid values are `1` (`R` - grey), `2` (`RG` - grey with alpha channel), `3` (`RGB` - red, green and blue channels) or `4` (`RGBA` - red, green, blue and alpha channels).
+    /// - Parameter numComponents: number of components. The valid values are `1` (`R` - grey), `2` (`RG` - grey with alpha channel), `3` (`RGB` - red, green and blue channels) or `4` (`RGBA` - red, green, blue and alpha channels). The number of components is preferred to be `4`.
     /// - Parameter componentSize: pixel component size in **bytes**. The valid values are `1`, `2` or `4`.
     /// - Parameter integerComponents: wheter the input components are integers. If `true`, then it's unsigned integer that maps between `0` and `1` (max value depending on the `componentSize`). For floating point components, the `componentSize` should be at least two bytes, otherwise the parameter is ignored and assumed to be `true`.
     /// - Parameter littleEndian: whether the components are in little endian or big endian order. For instance, `png`'s contents are usually represented in big endian order.
@@ -183,11 +184,13 @@ public:
     /// - Parameter hdr: whether the components represent extended dynamic range. I that case, components in the `contents` input are expected to be floating point values (i.e. the `integerComponents` parameter should be `false`), `componentSize` should be either `2` (16-bit float) or `4` (32-bit float) and the `linear` parameter should be `true`, otherwise this parameter is ignored and assumed to be `false`.
     /// - Parameter containsAlpha: Image contains alpha channel. Allows more accurate enconding in opaque areas. Only valid if number of components is either `2` or `4`, otherwise this parameter is ignored.
     /// - Parameter ldrAlpha: whether the last channel of hdr texture is used as LDR alpha channel. This oprion is valid when `numComponents` is set to `4`, `hdr` setting is `true` and `containsAlpha` is `true`, otherwise this setting is ignored. This option tells ASTC encoder to prioritize quality for opaque regions.
-    /// - Parameter normalMap: Indicates that it's a normal map. This property is only valid if `numComponents` is greater than or equals to `2` (`r` and `g` components will be used for encoding), `linear`=`true` and `hdr`=`false` and `containsAlpha`=`false`. The compresseor generates an RRRG ASTC image, the shader reads `x` and `y` components, the `z` component is reconstructed in the shader.
+    /// - Parameter normalMap: Indicates that it's a normal map. This property is only valid if `numComponents` is greater than or equals to `2` (`r` and `g` components will be used for encoding), `linear`=`true` and `hdr`=`false` and `containsAlpha`=`false`. The compresseor generates an RRRG ASTC image, the shader reads `x` and `y` components, the `z` component is reconstructed in the shader. If your normal map contains other channels, like metallness/roughness/etc., pass `false`.
     /// - Parameter error: error description container is something goes wrong.
     ///
     /// - Returns: an instance of ``ASTCRawImage`` if all input data is valid. Otherwise `null` is returned and `error` will contain verbose information what went wrong.
-    [[nodiscard]] static ASTCRawImage* fn_nullable create(const char* fn_nonnull contents fn_noescape, long width, long height, long depth, long numComponents, long componentSize, bool integerComponents, bool littleEndian, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap, ASTCError& error) SWIFT_NAME(__createUnsafe(_:width:height:depth:numComponents:componentSize:integerComponents:littleEndian:linear:hdr:containsAlpha:ldrAlpha:normalMap:error:)) SWIFT_RETURNS_RETAINED;
+    [[nodiscard]] static ASTCRawImage* fn_nullable create(const void* fn_nonnull contents fn_noescape, long width, long height, long depth, long numComponents, long componentSize, bool integerComponents, bool littleEndian, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap, ASTCError& error) SWIFT_NAME(__createUnsafe(_:width:height:depth:numComponents:componentSize:integerComponents:littleEndian:linear:hdr:containsAlpha:ldrAlpha:normalMap:error:)) SWIFT_RETURNS_RETAINED;
+    
+    [[nodiscard]] static ASTCRawImage* fn_nullable create(void* fn_nonnull contents, bool transferContents, long width, long height, long depth, long numComponents, long componentSize, bool integerComponents, bool littleEndian, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap, ASTCError& error) SWIFT_NAME(__createUnsafe(_:transferContents:width:height:depth:numComponents:componentSize:integerComponents:littleEndian:linear:hdr:containsAlpha:ldrAlpha:normalMap:error:)) SWIFT_RETURNS_RETAINED;
     
     
     /// Compresses image contents using specified block size and compression quality into an ``ASTCImage``.
@@ -206,7 +209,7 @@ public:
     
     // TODO: Migrate to @lifebound Spans by returning std::span when this Swift feature will be available
     /// Returns image contents.
-    const char* fn_nonnull getContents() fn_lifetimebound SWIFT_COMPUTED_PROPERTY { return _contents; }
+    const void* fn_nonnull getContents() fn_lifetimebound SWIFT_COMPUTED_PROPERTY { return _contents; }
     /// Returns image contents size.
     long getContentsSize() SWIFT_COMPUTED_PROPERTY { return _width * _height * _depth * 4 * _componentSize; }
     
@@ -240,6 +243,12 @@ public:
     
     bool getLinear() SWIFT_COMPUTED_PROPERTY { return _linear; }
     bool getHDR() SWIFT_COMPUTED_PROPERTY { return _hdr; }
+    
+    
+    struct Unsafe {
+        Unsafe() = delete;
+        static void* fn_nonnull transferContentsOwnership(ASTCRawImage* fn_nonnull image);
+    };
 }
 SWIFT_PRIVATE_FILEID("ASTCEncoder/ASTCRawImage.swift")
 FN_SWIFT_INTERFACE(ASTCRawImage)
@@ -257,7 +266,8 @@ class ASTCImage final {
 private:
     std::atomic<size_t> _referenceCounter;
     
-    char* fn_nonnull _contents;
+    std::byte* fn_nonnull _contents;
+    bool _ownsContents;
     const long _width;
     const long _height;
     const long _depth;
@@ -280,7 +290,8 @@ private:
     FN_FRIEND_SWIFT_INTERFACE(ASTCImage)
     
     
-    ASTCImage(char* fn_nonnull contents,
+    ASTCImage(std::byte* fn_nonnull contents,
+              bool ownsContents,
               long width, long height, long depth,
               long originalNumComponents, long componentSize,
               bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap,
@@ -289,7 +300,7 @@ private:
     ~ASTCImage();
     
 public:
-    ASTCRawImage* fn_nullable decompress(ASTCError& error, void* fn_nullable userInfo fn_noescape, ASTCDecoderProgressCallback fn_nullable progressCallback fn_noescape) SWIFT_NAME(__decompressUnsafe(error:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
+    [[nodiscard]] ASTCRawImage* fn_nullable decompress(ASTCError& error, void* fn_nullable userInfo fn_noescape, ASTCDecoderProgressCallback fn_nullable progressCallback fn_noescape) SWIFT_NAME(__decompressUnsafe(error:userInfo:progressCallback:)) SWIFT_RETURNS_RETAINED;
     
     long getWidth() SWIFT_COMPUTED_PROPERTY { return _width; }
     long getHeight() SWIFT_COMPUTED_PROPERTY { return _height; }
@@ -321,8 +332,28 @@ public:
     long getNumBlocksDepth() SWIFT_COMPUTED_PROPERTY { return _numBlocksDepth; }
     ASTCBlockSize getBlockSize() SWIFT_COMPUTED_PROPERTY { return _blockSize; }
     
-    const char* fn_nonnull getContents() fn_lifetimebound SWIFT_COMPUTED_PROPERTY { return _contents; }
+    const void* fn_nonnull getContents() fn_lifetimebound SWIFT_COMPUTED_PROPERTY { return _contents; }
     long getContentsSize() SWIFT_COMPUTED_PROPERTY { return _numBlocksWidth * _numBlocksHeight * _numBlocksDepth * 16; }
+    
+    
+    struct Unsafe {
+        Unsafe() = delete;
+        static void* fn_nonnull transferContentsOwnership(ASTCImage* fn_nonnull image fn_noescape);
+    };
+    
+    
+    /// The fastest, lowest quality, search preset.
+    static const float compressionQualityFastest;
+    /// The fast search preset.
+    static const float compressionQualityFast;
+    /// The medium quality search preset.
+    static const float compressionQualityMedium;
+    /// The thorough quality search preset.
+    static const float compressionQualityThorough;
+    /// The thorough quality search preset.
+    static const float compressionQualityVeryThorough;
+    /// The exhaustive, highest quality, search preset.
+    static const float compressionQualityExhaustive;
 }
 FN_SWIFT_INTERFACE(ASTCImage)
 SWIFT_UNCHECKED_SENDABLE;

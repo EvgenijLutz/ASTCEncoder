@@ -1,6 +1,6 @@
 //
 //  Common.cpp
-//  ASTCEncoder
+//  CommonHeaders
 //
 //  Created by Evgenij Lutz on 11.11.25.
 //

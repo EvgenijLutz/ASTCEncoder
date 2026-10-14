@@ -97,7 +97,8 @@ void ASTCError::setErrorMessage(const char* fn_nullable errorMessage fn_noescape
         return;
     }
     
-    std::strncpy(_errorMessage, errorMessage, ASTC_ENCODER_ERROR_SIZE);
+    std::strncpy(_errorMessage, errorMessage, ASTC_ENCODER_ERROR_SIZE - 1);
+    _errorMessage[ASTC_ENCODER_ERROR_SIZE - 1] = 0;
 }
 
 
@@ -139,18 +140,19 @@ bool ASTCBlockSize::operator == (const ASTCBlockSize& other) const {
 
 
 ASTCImage* fn_nonnull ASTCImageEncoderContext::extractImage() const SWIFT_RETURNS_RETAINED {
-    auto owner = reinterpret_cast<ASTCRawImage*>(this->owner);
-    auto astcDataCopy = reinterpret_cast<char*>(malloc(dataLength));
-    memcpy(astcDataCopy, astcData, dataLength);
-    return new ASTCImage(astcDataCopy, owner->_width, owner->_height, owner->_depth, owner->_originalNumComponents, owner->_componentSize, owner->_linear, owner->_hdr, owner->_containsAlpha, owner->_ldrAlpha, owner->_normalMap, astcXCount, astcYCount, astcZCount, blockSize);
+    auto owner = static_cast<ASTCRawImage*>(this->owner);
+    auto astcDataCopy = static_cast<std::byte*>(std::malloc(dataLength));
+    std::memcpy(astcDataCopy, astcData, dataLength);
+    return new ASTCImage(astcDataCopy, true, owner->_width, owner->_height, owner->_depth, owner->_originalNumComponents, owner->_componentSize, owner->_linear, owner->_hdr, owner->_containsAlpha, owner->_ldrAlpha, owner->_normalMap, astcXCount, astcYCount, astcZCount, blockSize);
 }
 
 
 // MARK: - ASTCRawImage
 
-ASTCRawImage::ASTCRawImage(char* fn_nonnull contents, long width, long height, long depth, long originalNumComponents, long componentSize, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap):
+ASTCRawImage::ASTCRawImage(std::byte* fn_nonnull contents, bool ownsContents, long width, long height, long depth, long originalNumComponents, long componentSize, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap):
 _referenceCounter(1),
 _contents(contents),
+_ownsContents(ownsContents),
 _width(width),
 _height(height),
 _depth(depth),
@@ -165,7 +167,9 @@ _normalMap(normalMap) {
 }
 
 ASTCRawImage::~ASTCRawImage() {
-    delete [] _contents;
+    if (_ownsContents) {
+        std::free(_contents);
+    }
 }
 
 
@@ -183,7 +187,7 @@ struct PixelInfo {
     void convertToDestinationType(bool littleEndian) {
         // Swap bytes instead of manually bit shift to make the value little endian
         if (littleEndian == false) {
-            constexpr auto numBytes = sizeof(SourceType);
+            constexpr auto numBytes = static_cast<int>(sizeof(SourceType));
             constexpr auto halfSize = numBytes / 2;
             constexpr auto lastByteIndex = numBytes - 1;
             for (auto byteIndex = 0; byteIndex < halfSize; byteIndex++) {
@@ -204,9 +208,16 @@ struct PixelInfo {
 };
 
 
-ASTCRawImage* fn_nullable ASTCRawImage::create(const char* fn_nonnull data fn_noescape, long width, long height, long depth, long numComponents, long componentSize, bool integerComponents, bool littleEndian, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap, ASTCError& error) SWIFT_RETURNS_RETAINED {
+ASTCRawImage* fn_nullable ASTCRawImage::create(const void* fn_nonnull contents fn_noescape, long width, long height, long depth, long numComponents, long componentSize, bool integerComponents, bool littleEndian, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap, ASTCError& error) SWIFT_RETURNS_RETAINED {
+    // We are sure that contents will not be modified
+    auto quasiMutableContents = const_cast<void*>(contents);
+    return create(quasiMutableContents, false, width, height, depth, numComponents, componentSize, integerComponents, littleEndian, linear, hdr, containsAlpha, ldrAlpha, normalMap, error);
+}
+
+
+ASTCRawImage* fn_nullable ASTCRawImage::create(void* fn_nonnull contents, bool transferContents, long width, long height, long depth, long numComponents, long componentSize, bool integerComponents, bool littleEndian, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap, ASTCError& error) SWIFT_RETURNS_RETAINED {
     // Validate input data
-    if (data == nullptr) {
+    if (contents == nullptr) {
         error.setErrorMessage("Image data not specified");
         return nullptr;
     }
@@ -298,23 +309,39 @@ ASTCRawImage* fn_nullable ASTCRawImage::create(const char* fn_nonnull data fn_no
     
     
     // Create image data
-    auto imageDataSize = width * height * componentSize * 4;
-    auto dataCopy = new char[imageDataSize];
+    auto imageDataSize = width * height * depth * componentSize * 4;
+    std::byte* dataCopy;
     
-    // Copy the whole image contents if the original number of component matches
+    // Copy or directly assign the whole image contents if the original number of component matches
     if (numComponents == 4) {
-        std::memcpy(dataCopy, data, imageDataSize);
+        if (transferContents) {
+            dataCopy = static_cast<std::byte*>(contents);
+        }
+        else {
+            dataCopy = static_cast<std::byte*>(std::malloc(imageDataSize));
+            std::memcpy(dataCopy, contents, imageDataSize);
+        }
     }
     else {
-        std::memset(dataCopy, 255, imageDataSize);
+        dataCopy = static_cast<std::byte*>(std::malloc(imageDataSize));
+        auto data = static_cast<const std::byte*>(contents);
+        
+        std::memset(dataCopy, 0, imageDataSize);
         auto pixelSize = numComponents * componentSize;
         auto targetPixelSize = 4 * componentSize;
-        for (auto j = 0; j < height; j++) {
-            for (auto i = 0; i < width; i++) {
-                std::memcpy(dataCopy + (i * targetPixelSize + j * width * targetPixelSize),
-                            data + (i * pixelSize + 0 + j * width * pixelSize),
-                            pixelSize);
+        for (auto k = 0; k < depth; k++) {
+            for (auto j = 0; j < height; j++) {
+                for (auto i = 0; i < width; i++) {
+                    std::memcpy(dataCopy + (i * targetPixelSize + j * width * targetPixelSize + k * height * width * targetPixelSize),
+                                data + (i * pixelSize + 0 + j * width * pixelSize + k * height * width * pixelSize),
+                                pixelSize);
+                }
             }
+        }
+        
+        // Contents could not be transferred directly because number of components did not match
+        if (transferContents) {
+            std::free(contents);
         }
     }
     
@@ -322,7 +349,7 @@ ASTCRawImage* fn_nullable ASTCRawImage::create(const char* fn_nonnull data fn_no
     if (integerComponents && componentSize > 1) {
         // Also convert to the little endian system
         // PNG's integers are in network byte order (big endian)
-        auto numPixels = width * height * 4;
+        auto numPixels = width * height * depth * 4;
         if (componentSize == 2) {
             auto pixels = reinterpret_cast<PixelInfo<unsigned short, __fp16>*>(dataCopy);
             for (auto pixelIndex = 0; pixelIndex < numPixels; pixelIndex++) {
@@ -339,6 +366,7 @@ ASTCRawImage* fn_nullable ASTCRawImage::create(const char* fn_nonnull data fn_no
     
     // Success
     return new ASTCRawImage(dataCopy,
+                            true,
                             width, height, depth,
                             normalMap ? 2 : numComponents, componentSize,
                             linear,
@@ -365,7 +393,7 @@ static astcenc_profile makeASTCEncoderProfile(bool linear, bool hdr, bool ldrAlp
 
 ASTCImage* fn_nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float quality, ASTCError& error, void* fn_nullable userInfo fn_noescape, ASTCEncoderProgressCallback fn_nullable progressCallback fn_noescape) {
     // Prepare ASTC encoder config
-    astcenc_config config;
+    astcenc_config config = { };
     long blockWidth = blockSize.width;
     long blockHeight = blockSize.height;
     long blockDepth = blockSize.depth;
@@ -406,8 +434,7 @@ ASTCImage* fn_nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qua
             return;
         }
         
-        // Execute callback
-        // TODO: We can also send back image data to see the live preview!
+        // Execute callback. We can also send back image data to see the live preview!
         auto shouldStop = callbackContext.encoderCallback(callbackContext.userInfo, progress / 100, callbackContext.encoderContext);
         if (shouldStop) {
             callbackContext.cancelled = true;
@@ -448,8 +475,13 @@ ASTCImage* fn_nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qua
     image.dim_y = static_cast<unsigned int>(_height);
     image.dim_z = static_cast<unsigned int>(_depth);
     // Data is always passed as 4 component image array
-    void* content = static_cast<void*>(_contents);
-    image.data = &content;
+    void** zSlices = static_cast<void**>(std::malloc(sizeof(void*) * _depth));
+    auto zSliceSize = _width * _height * 4 * _componentSize;
+    for (auto i = 0; i < _depth; i++) {
+        auto zSlice = static_cast<std::byte*>(_contents) + i * zSliceSize;
+        zSlices[i] = zSlice;
+    }
+    image.data = zSlices;
     
     // Prepare swizzle info
     // From the documentation:
@@ -491,6 +523,7 @@ ASTCImage* fn_nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qua
             
         default:
             error.setErrorMessage("Unsupported number of components");
+            std::free(zSlices);
             astcenc_context_free(context);
             callbackContext.reset();
             return nullptr;
@@ -500,9 +533,9 @@ ASTCImage* fn_nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qua
     auto astcXCount = static_cast<long>(ceilf(static_cast<float>(_width) / static_cast<float>(blockWidth)));
     auto astcYCount = static_cast<long>(ceilf(static_cast<float>(_height) / static_cast<float>(blockHeight)));
     auto astcZCount = static_cast<long>(ceilf(static_cast<float>(_depth) / static_cast<float>(blockDepth)));
-    size_t dataLength = astcXCount * astcYCount * blockDepth * 16;
-    char* astcData = new char[dataLength];
-    memset(astcData, 0, dataLength);
+    size_t dataLength = astcXCount * astcYCount * astcZCount * 16;
+    auto astcData = static_cast<std::byte*>(std::malloc(dataLength));
+    std::memset(astcData, 0, dataLength);
     
     callbackContext.encoderContext.owner = this;
     callbackContext.encoderContext.astcXCount = astcXCount;
@@ -517,7 +550,8 @@ ASTCImage* fn_nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qua
     result = astcenc_compress_image(context, &image, &swizzle, compressedData, dataLength, 0);
     if (result != astcenc_error::ASTCENC_SUCCESS) {
         error.setErrorMessage("Could not compress image");
-        delete [] astcData;
+        std::free(astcData);
+        std::free(zSlices);
         astcenc_context_free(context);
         callbackContext.reset();
         return nullptr;
@@ -526,25 +560,34 @@ ASTCImage* fn_nullable ASTCRawImage::compress(ASTCBlockSize blockSize, float qua
     // Check if task was cancelled
     if (callbackContext.cancelled) {
         error.setErrorMessage("Task was cancelled");
-        delete [] astcData;
+        std::free(astcData);
+        std::free(zSlices);
         astcenc_context_free(context);
         callbackContext.reset();
         return nullptr;
     }
     
     // Clean up
+    std::free(zSlices);
     astcenc_context_free(context);
     callbackContext.reset();
     
-    return new ASTCImage(astcData, _width, _height, _depth, _originalNumComponents, _componentSize, _linear, _hdr, _containsAlpha, _ldrAlpha, _normalMap, astcXCount, astcYCount, astcZCount, blockSize);
+    return new ASTCImage(astcData, true, _width, _height, _depth, _originalNumComponents, _componentSize, _linear, _hdr, _containsAlpha, _ldrAlpha, _normalMap, astcXCount, astcYCount, astcZCount, blockSize);
+}
+
+
+void* fn_nonnull ASTCRawImage::Unsafe::transferContentsOwnership(ASTCRawImage* fn_nonnull image) {
+    image->_ownsContents = false;
+    return image->_contents;
 }
 
 
 // MARK: - ASTCImage
 
-ASTCImage::ASTCImage(char* fn_nonnull contents, long width, long height, long depth, long originalNumComponents, long componentSize, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap, long numBlocksWidth, long numBlocksHeight, long numBlocksDepth, ASTCBlockSize blockSize):
+ASTCImage::ASTCImage(std::byte* fn_nonnull contents, bool ownsContents, long width, long height, long depth, long originalNumComponents, long componentSize, bool linear, bool hdr, bool containsAlpha, bool ldrAlpha, bool normalMap, long numBlocksWidth, long numBlocksHeight, long numBlocksDepth, ASTCBlockSize blockSize):
 _referenceCounter(1),
 _contents(contents),
+_ownsContents(ownsContents),
 _width(width),
 _height(height),
 _depth(depth),
@@ -563,7 +606,9 @@ _blockSize(blockSize) {
 }
 
 ASTCImage::~ASTCImage() {
-    delete [] _contents;
+    if (_ownsContents) {
+        std::free(_contents);
+    }
 }
 
 
@@ -623,8 +668,14 @@ ASTCRawImage* fn_nullable ASTCImage::decompress(ASTCError& error, void* fn_nulla
     image.dim_y = static_cast<unsigned int>(_height);
     image.dim_z = static_cast<unsigned int>(_depth);
     // Data is always passed as 4 component image array
-    auto content = new char[_width * _height * _depth * 4 * _componentSize];
-    image.data = reinterpret_cast<void**>(&content);
+    auto content = static_cast<std::byte*>(std::malloc(_width * _height * _depth * 4 * _componentSize));
+    void** zSlices = static_cast<void**>(std::malloc(sizeof(void*) * _depth));
+    auto zSliceSize = _width * _height * 4 * _componentSize;
+    for (auto i = 0; i < _depth; i++) {
+        auto zSlice = static_cast<std::byte*>(content) + i * zSliceSize;
+        zSlices[i] = zSlice;
+    }
+    image.data = zSlices;
     
     // Prepare swizzle info
     astcenc_swizzle swizzle;
@@ -675,6 +726,8 @@ ASTCRawImage* fn_nullable ASTCImage::decompress(ASTCError& error, void* fn_nulla
             
         default:
             error.setErrorMessage("Unsupported number of components");
+            std::free(content);
+            std::free(zSlices);
             astcenc_context_free(context);
             callbackContext.reset();
             return nullptr;
@@ -689,13 +742,15 @@ ASTCRawImage* fn_nullable ASTCImage::decompress(ASTCError& error, void* fn_nulla
     result = astcenc_decompress_image(context, compressedData, dataLength, &image, &swizzle, 0);
     if (result != astcenc_error::ASTCENC_SUCCESS) {
         error.setErrorMessage("Could not decompress image");
-        delete [] content;
+        std::free(content);
+        std::free(zSlices);
         astcenc_context_free(context);
         callbackContext.reset();
         return nullptr;
     }
     
     // Clean up
+    std::free(zSlices);
     astcenc_context_free(context);
     callbackContext.reset();
     
@@ -725,8 +780,23 @@ ASTCRawImage* fn_nullable ASTCImage::decompress(ASTCError& error, void* fn_nulla
 //        }
 //    }
     
-    return new ASTCRawImage(content, _width, _height, _depth, _originalNumComponents, _componentSize, _linear, _hdr, _containsAlpha, _ldrAlpha, _normalMap);
+    return new ASTCRawImage(content, true, _width, _height, _depth, _originalNumComponents, _componentSize, _linear, _hdr, _containsAlpha, _ldrAlpha, _normalMap);
 }
+
+
+void* fn_nonnull ASTCImage::Unsafe::transferContentsOwnership(ASTCImage* fn_nonnull image fn_noescape) {
+    image->_ownsContents = false;
+    return image->_contents;
+}
+
+
+
+const float ASTCImage::compressionQualityFastest = ASTCENC_PRE_FASTEST;
+const float ASTCImage::compressionQualityFast = ASTCENC_PRE_FAST;
+const float ASTCImage::compressionQualityMedium = ASTCENC_PRE_MEDIUM;
+const float ASTCImage::compressionQualityThorough = ASTCENC_PRE_THOROUGH;
+const float ASTCImage::compressionQualityVeryThorough = ASTCENC_PRE_VERYTHOROUGH;
+const float ASTCImage::compressionQualityExhaustive = ASTCENC_PRE_EXHAUSTIVE;
 
 
 FN_IMPLEMENT_SWIFT_INTERFACE1(ASTCRawImage)

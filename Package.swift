@@ -1,4 +1,4 @@
-// swift-tools-version: 6.3
+// swift-tools-version: 6.4
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -7,30 +7,21 @@ import PackageDescription
 let package = Package(
     name: "ASTCEncoder",
     platforms: [
-        .macOS(.v10_13),
-        .iOS(.v12),
-        .tvOS(.v12),
-        .watchOS(.v8),
+        .macOS(.v12),
+        .iOS(.v15),
+        .tvOS(.v15),
+        .watchOS(.v9),
         .visionOS(.v1),
         .custom("Android", versionString: "5.0")
     ],
     products: [
-        .library(
-            name: "astcenc",
-            targets: ["astcenc"]
-        ),
-        .library(
-            name: "ASTCEncoderC",
-            targets: ["ASTCEncoderC"]
-        ),
-        .library(
-            name: "ASTCEncoder",
-            targets: ["ASTCEncoder"]
-        ),
+        .library(name: "astcenc", targets: ["astcenc"]),
+        .library(name: "ASTCEncoderC", targets: ["ASTCEncoderC"]),
+        .library(name: "ASTCEncoder", targets: ["ASTCEncoder"]),
     ],
     targets: [
         {
-#if os(macOS) || os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
+#if os(anyAppleOS)
             .binaryTarget(name: "astcenc", path: "Binaries/astcenc.xcframework")
 #else
             .binaryTarget(name: "astcenc", path: "Binaries/astcenc.artifactbundle")
@@ -38,11 +29,20 @@ let package = Package(
         }(),
         .target(
             name: "ASTCEncoderC",
-            dependencies: [
-                .target(name: "astcenc")
+            dependencies: ["astcenc"],
+            cSettings: [
+                .enableWarning("all"),
+                .enableWarning("extra"),
+                .enableWarning("implicit-fallthrough"),
+                .enableWarning("int-conversion"),
+                .enableWarning("pointer-to-int-cast")
             ],
             cxxSettings: [
-                .enableWarning("all")
+                .enableWarning("all"),
+                .enableWarning("extra"),
+                .enableWarning("implicit-fallthrough"),
+                .enableWarning("int-conversion"),
+                .enableWarning("pointer-to-int-cast")
             ],
             swiftSettings: [
                 .interoperabilityMode(.Cxx)
@@ -50,10 +50,7 @@ let package = Package(
         ),
         .target(
             name: "ASTCEncoder",
-            dependencies: [
-                .target(name: "astcenc"),
-                .target(name: "ASTCEncoderC")
-            ],
+            dependencies: ["ASTCEncoderC"],
             swiftSettings: [
                 .interoperabilityMode(.Cxx),
                 .strictMemorySafety()
