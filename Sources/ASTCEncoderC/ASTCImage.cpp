@@ -5,6 +5,7 @@
 //  Created by Evgenij Lutz on 10.11.25.
 //
 
+#define _LIBCPP_REMOVE_TRANSITIVE_INCLUDES
 #define __STDC_LIB_EXT1__ 1
 #include <astcenc.h>
 #include <ASTCEncoderC/ASTCImage.hpp>
@@ -12,6 +13,7 @@
 #include <thread>
 #include <string.h>
 #include <numeric>
+#include <math.h>
 
 
 struct ASTCCallbackContext {
@@ -83,9 +85,9 @@ ASTCError& ASTCError::operator = (ASTCError&& other) {
     return *this;
 }
 
-std::span<const char> ASTCError::getMessageSpan() const fn_lifetimebound {
-    return std::span(_errorMessage, strnlen(_errorMessage, ASTC_ENCODER_ERROR_SIZE));
-}
+//std::span<const char> ASTCError::getMessageSpan() const fn_lifetimebound {
+//    return std::span(_errorMessage, strnlen(_errorMessage, ASTC_ENCODER_ERROR_SIZE));
+//}
 
 const char* fn_nullable ASTCError::getErrorMessage() const {
     return _errorMessage;

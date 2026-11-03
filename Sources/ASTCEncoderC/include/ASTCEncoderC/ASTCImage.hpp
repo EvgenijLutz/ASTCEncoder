@@ -8,7 +8,7 @@
 #pragma once
 
 #include <ASTCEncoderC/Common.hpp>
-#include <string_view>
+#include <atomic>
 
 
 #define ASTC_ENCODER_ERROR_SIZE 128
@@ -34,8 +34,8 @@ public:
     ASTCError& operator = (const ASTCError& other);
     ASTCError& operator = (ASTCError&& other);
     
-    std::span<const char> getMessageSpan() const fn_lifetimebound SWIFT_COMPUTED_PROPERTY;
-    const char* fn_nullable getErrorMessage() const fn_lifetimebound SWIFT_COMPUTED_PROPERTY;
+    //std::span<const char> getMessageSpan() const /*fn_lifetimebound*/ SWIFT_COMPUTED_PROPERTY;
+    const char* fn_nullable getErrorMessage() const /*fn_lifetimebound*/ SWIFT_COMPUTED_PROPERTY;
     void setErrorMessage(const char* fn_nullable errorMessage fn_noescape) SWIFT_COMPUTED_PROPERTY;
 };
 
@@ -209,7 +209,7 @@ public:
     
     // TODO: Migrate to @lifebound Spans by returning std::span when this Swift feature will be available
     /// Returns image contents.
-    const void* fn_nonnull getContents() fn_lifetimebound SWIFT_COMPUTED_PROPERTY { return _contents; }
+    const void* fn_nonnull getContents() /*fn_lifetimebound*/ SWIFT_COMPUTED_PROPERTY { return _contents; }
     /// Returns image contents size.
     long getContentsSize() SWIFT_COMPUTED_PROPERTY { return _width * _height * _depth * 4 * _componentSize; }
     
@@ -332,7 +332,7 @@ public:
     long getNumBlocksDepth() SWIFT_COMPUTED_PROPERTY { return _numBlocksDepth; }
     ASTCBlockSize getBlockSize() SWIFT_COMPUTED_PROPERTY { return _blockSize; }
     
-    const void* fn_nonnull getContents() fn_lifetimebound SWIFT_COMPUTED_PROPERTY { return _contents; }
+    const void* fn_nonnull getContents() /*fn_lifetimebound*/ SWIFT_COMPUTED_PROPERTY { return _contents; }
     long getContentsSize() SWIFT_COMPUTED_PROPERTY { return _numBlocksWidth * _numBlocksHeight * _numBlocksDepth * 16; }
     
     
