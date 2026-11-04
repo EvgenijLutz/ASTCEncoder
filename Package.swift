@@ -35,14 +35,16 @@ let package = Package(
                 .enableWarning("extra"),
                 .enableWarning("implicit-fallthrough"),
                 .enableWarning("int-conversion"),
-                .enableWarning("pointer-to-int-cast")
+                .enableWarning("pointer-to-int-cast"),
+                .enableWarning("lifetime-safety")
             ],
             cxxSettings: [
                 .enableWarning("all"),
                 .enableWarning("extra"),
                 .enableWarning("implicit-fallthrough"),
                 .enableWarning("int-conversion"),
-                .enableWarning("pointer-to-int-cast")
+                .enableWarning("pointer-to-int-cast"),
+                .enableWarning("lifetime-safety")
             ],
             swiftSettings: [
                 .interoperabilityMode(.Cxx)

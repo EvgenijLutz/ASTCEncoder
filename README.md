@@ -1,7 +1,7 @@
 # ASTCEncoder
 ARM's [astc-encoder](https://github.com/ARM-software/astc-encoder) library prebuilt for all Apple platforms and Android with C++ helper interfaces and Swift support.
 
-Current version: [5.7.0](https://github.com/ARM-software/astc-encoder/releases/tag/5.7.0).
+Current version: [5.7.1](https://github.com/ARM-software/astc-encoder/releases/tag/5.7.1).
 
 ![An example of compressing a 384x384 image (original on the left) using the biggest (12x12) block size with the highest quality - 432KB vs 16KB](Resources/Media/Example-1.png)
 _An example of compressing a 384x384 image (original on the left) using the biggest (12x12) block size with the highest quality - 432KB vs 16KB_
